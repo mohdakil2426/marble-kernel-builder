@@ -223,5 +223,5 @@ jobs:
           gh release create "${tag}" "${release_assets[@]}" \
             --draft \
             --target "${GITHUB_SHA}" \
-            --title "Marble Kernel · Stock HyperOS · r${GITHUB_RUN_NUMBER}" \
+            --title "Melt-Kernel-Susfs·HyperOS· r${GITHUB_RUN_NUMBER}" \
             --notes-file matrix-summary.md
