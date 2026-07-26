@@ -4,31 +4,31 @@ on:
   workflow_dispatch:
     inputs:
       build_none:
-        description: "Build: none (baseline no-root)"
+        description: "Manager: none (baseline no-root)"
         type: boolean
         default: false
       build_kernelsu:
-        description: "Build: KernelSU (no SUSFS)"
+        description: "Manager: KernelSU (SUSFS unsupported)"
         type: boolean
         default: false
       build_kernelsu_next:
-        description: "Build: KernelSU-Next"
+        description: "Manager: KernelSU-Next (SUSFS uses verified pershoot fork)"
         type: boolean
         default: false
       build_sukisu_ultra:
-        description: "Build: SukiSU Ultra"
+        description: "Manager: SukiSU Ultra"
         type: boolean
         default: false
       build_resukisu:
-        description: "Build: ReSukiSU"
+        description: "Manager: ReSukiSU"
         type: boolean
         default: false
       enable_susfs:
-        description: "Enable SUSFS (applies to KSUNext, SukiSU Ultra, ReSukiSU)"
+        description: "Feature: enable SUSFS for supported managers"
         type: boolean
         default: false
       susfs_version:
-        description: SUSFS preset version
+        description: "Feature: SUSFS preset version"
         type: choice
         default: v2.2.0
         options:
@@ -36,11 +36,11 @@ on:
           - v2.1.0
           - custom
       susfs_ref:
-        description: "SUSFS branch/tag/commit (only for custom version)"
+        description: "Feature: custom SUSFS ref (custom preset only)"
         required: false
         default: ""
       kernel_source:
-        description: "Kernel source (named by project/author)"
+        description: "Source: kernel tree / ROM family"
         type: choice
         default: melt
         options:
@@ -50,18 +50,18 @@ on:
           - aosp-pablo
           - pa-gr
       source_ref:
-        description: "Override branch/tag/commit (empty = preset default)"
+        description: "Source: override ref (empty = preset default)"
         required: false
         default: ""
       build_scope:
-        description: Build target set
+        description: "Build: output scope"
         type: choice
         default: image-only
         options:
           - image-only
           - full
       toolchain:
-        description: "Compiler toolchain (auto = preset recommended, e.g. llvm-22 for LOS)"
+        description: "Build: compiler (auto = source recommendation)"
         type: choice
         default: auto
         options:
@@ -69,7 +69,7 @@ on:
           - android-r416183b
           - llvm-22.1.8
       lto:
-        description: "Clang LTO mode (thin=default free-runner safe; full needs more RAM)"
+        description: "Build: LTO (thin default; full needs more RAM)"
         type: choice
         default: thin
         options:
@@ -77,11 +77,11 @@ on:
           - thin
           - full
       enable_ccache:
-        description: Enable ccache
+        description: "CI: use ccache"
         type: boolean
         default: true
       create_draft_release:
-        description: Create a draft GitHub release when the build succeeds
+        description: "Release: create draft after all jobs pass"
         type: boolean
         default: false
 

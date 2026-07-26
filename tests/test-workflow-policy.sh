@@ -156,6 +156,22 @@ for preset in melt lineageos evolution-x aosp-pablo pa-gr; do
   }
 done
 
+# The Run workflow form groups inputs by purpose without renaming the stable
+# input keys consumed by gh workflow run and existing automation.
+required_run_menu_labels=(
+  'description: "Manager: KernelSU-Next (SUSFS uses verified pershoot fork)"'
+  'description: "Feature: enable SUSFS for supported managers"'
+  'description: "Source: kernel tree / ROM family"'
+  'description: "Build: compiler (auto = source recommendation)"'
+  'description: "Release: create draft after all jobs pass"'
+)
+for menu_label in "${required_run_menu_labels[@]}"; do
+  grep -Fq -- "${menu_label}" "${matrix}" || {
+    echo "FAIL: Run workflow menu missing clear label: ${menu_label}" >&2
+    exit 1
+  }
+done
+
 grep -Fq 'apply-kernel-source-patches.sh' "${core}" || {
   echo "FAIL: build-core does not apply optional kernel source-local patches" >&2
   exit 1
