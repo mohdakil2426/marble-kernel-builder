@@ -50,7 +50,7 @@ KERNEL_DIR="${tmp_dir}" RESOLVED_REFS_FILE="${refs_file}" \
   KERNEL_SOURCE=evolution-x KERNEL_SOURCE_DISPLAY=Evolution-X \
   KERNEL_SOURCE_AUTHOR=Evolution-X SUPPORTED_ROM_LABEL=Evolution-X \
   ROM_FAMILY=los ROM_SUPPORT='Evolution X and LOS-based custom ROMs only' \
-  DEFCONFIG_MODE=gki_fragments DEFCONFIG= BASE_DEFCONFIG=gki_defconfig \
+  DEFCONFIG_MODE=gki_fragments DEFCONFIG='' BASE_DEFCONFIG=gki_defconfig \
   CONFIG_FRAGMENTS='vendor/waipio_GKI.config vendor/xiaomi_GKI.config vendor/marble_GKI.config vendor/debugfs.config' \
   SOURCE_REPO=Evolution-X-Devices/kernel_xiaomi_sm8450 SOURCE_REF=cnb \
   BUILD_SCOPE=image-only LTO=thin TOOLCHAIN=llvm-22.1.8 PACKAGE_FAMILY=LOS \
