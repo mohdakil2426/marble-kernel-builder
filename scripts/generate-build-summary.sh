@@ -21,41 +21,91 @@ fi
 
 source "${zip_env}"
 
-declare -A info
-summary_load_info info "${build_info}"
+get_info() {
+  local key="$1"
+  summary_get_info "${build_info}" "${key}"
+}
 
-manager_name="${info[manager]:-}"
-manager_repo="${info[manager_repo]:-}"
-manager_commit="${info[manager_commit]:-}"
-source_repo="${info[source_repo]:-}"
-workflow_run="${info[workflow_run]:-}"
-rom_support="${info[rom_support]:-Official Xiaomi stock ${SUPPORTED_ROM_LABEL} only}"
-susfs_display="${info[susfs_reported_version]:-${info[susfs_version]:-}}"
-
-manager_label="$(manager_display "${manager_name}")"
-manager_app_link="$(manager_app_url "${manager_name}")"
-
+# ── Pull all fields from build-info.txt ──────────────────────────────────────
+source_repo="$(get_info source_repo)"
+source_ref="$(get_info source_ref)"
+source_commit="$(get_info source_commit)"
+workflow_run="$(get_info workflow_run)"
+kernel_source_id="$(get_info kernel_source)"
+kernel_source_author="$(get_info kernel_source_author)"
+rom_support="$(get_info rom_support)"
+if [[ -z "${rom_support}" ]]; then
+  rom_support="Official Xiaomi stock ${SUPPORTED_ROM_LABEL} only"
+fi
+manager_name="$(get_info manager)"
+manager_repo="$(get_info manager_repo)"
+manager_ref="$(get_info manager_ref)"
+manager_commit="$(get_info manager_commit)"
+manager_tag="$(get_info manager_tag)"
+manager_version_code="$(get_info manager_version_code)"
+manager_build_version_code="$(get_info manager_build_version_code)"
+manager_build_version_name="$(get_info manager_build_version_name)"
+manager_build_tag="$(get_info manager_build_tag)"
+manager_signature_size="$(get_info manager_signature_size)"
+manager_signature_hash="$(get_info manager_signature_hash)"
+manager_supported_line="$(get_info manager_supported_line)"
+susfs_version="$(get_info susfs_version)"
+susfs_branch="$(get_info susfs_kernel_branch)"
+susfs_commit="$(get_info susfs_commit)"
+susfs_reported="$(get_info susfs_reported_version)"
+susfs_url="$(get_info susfs_url)"
+android_clang_version="$(get_info android_clang_version)"
+android_clang_commit="$(get_info android_clang_commit)"
+lto_mode="$(get_info lto)"
+lto_mode="${lto_mode:-thin}"
+toolchain_id="$(get_info toolchain)"
+ccache_hit="$(get_info ccache_hit)"
+thinlto_cache_hit="$(get_info thinlto_cache_hit)"
+package_family="$(get_info package_family)"
+quality_label="$(get_info quality_label)"
+if [[ -z "${quality_label}" ]]; then
+  quality_label="$(summary_quality_label "${kernel_source_id:-melt}")"
+fi
 zip_sha="$(sha256sum "${release_dir}/${zip_name}" | awk '{print $1}')"
 image_sha="$(sha256sum "${release_dir}/Image" | awk '{print $1}')"
 zip_size="$(du -h "${release_dir}/${zip_name}" | awk '{print $1}')"
-build_date="${info[build_started_utc]:-$(date -u '+%Y-%m-%d %H:%M:%S UTC')}"
-run_number="${GITHUB_RUN_NUMBER:-${workflow_run##*/}}"
+build_date="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+build_id="${GITHUB_RUN_ID:-}"
+run_number="${GITHUB_RUN_NUMBER:-}"
+if [[ -z "${build_id}" && -n "${workflow_run}" ]]; then
+  build_id="${workflow_run##*/}"
+fi
 
-# ── Badges ───────────────────────────────────────────────────────────────────
+# ── Display names ─────────────────────────────────────────────────────────────
+manager_display="$(manager_display "${manager_name}")"
+
+susfs_display="${susfs_reported:-${susfs_version}}"
+
+manager_app_url="$(manager_app_url "${manager_name}")"
+
+# ── Build shields.io badge URLs ───────────────────────────────────────────────
+
+# Manager badge
 if [[ "${manager_name}" == "none" ]]; then
   manager_badge_url="https://img.shields.io/badge/Manager-No_Root-757575?style=for-the-badge&logo=linux&logoColor=white"
   manager_badge_link="https://github.com/${source_repo}"
 else
-  _version_str="${info[manager_build_version_name]:-${info[manager_build_tag]:-${info[manager_tag]:-unknown}}}"
-  _version_code="${info[manager_build_version_code]:-${info[manager_version_code]:-}}"
-  [[ -n "${_version_code}" ]] && _version_str="${_version_str} #${_version_code}"
-  manager_badge_url="https://img.shields.io/badge/$(badge_encode "${manager_label}")-$(badge_encode "${_version_str}")-4CAF50?style=for-the-badge&logo=linux&logoColor=white"
+  _label="$(badge_encode "${manager_display}")"
+  _version_str="${manager_build_version_name:-${manager_build_tag:-${manager_tag:-unknown}}}"
+  _version_code="${manager_build_version_code:-${manager_version_code}}"
+  if [[ -n "${_version_code}" ]]; then
+    _version_str="${_version_str} #${_version_code}"
+  fi
+  _msg="$(badge_encode "${_version_str}")"
+  manager_badge_url="https://img.shields.io/badge/${_label}-${_msg}-4CAF50?style=for-the-badge&logo=linux&logoColor=white"
   manager_badge_link="https://github.com/${manager_repo}"
 fi
 
+# SUSFS badge
 if [[ "${ENABLE_SUSFS}" == "true" ]]; then
-  susfs_badge_url="https://img.shields.io/badge/SUSFS-$(badge_encode "${susfs_display}")-FF6D00?style=for-the-badge&logo=gitlab&logoColor=white"
-  susfs_badge_link="${info[susfs_url]:-https://gitlab.com/simonpunk/susfs4ksu}"
+  _msg="$(badge_encode "${susfs_display}")"
+  susfs_badge_url="https://img.shields.io/badge/SUSFS-${_msg}-FF6D00?style=for-the-badge&logo=gitlab&logoColor=white"
+  susfs_badge_link="${susfs_url}"
 else
   susfs_badge_url="https://img.shields.io/badge/SUSFS-Disabled-757575?style=for-the-badge&logo=gitlab&logoColor=white"
   susfs_badge_link="https://gitlab.com/simonpunk/susfs4ksu"
@@ -64,10 +114,12 @@ fi
 device_badge_url="https://img.shields.io/badge/Poco_F5_%2F_Note_12_Turbo-marble_%7C_marblein-EF5350?style=for-the-badge"
 build_badge_url="https://img.shields.io/badge/Build-Passing-2088FF?style=for-the-badge&logo=githubactions&logoColor=white"
 
+# ── Write summary ─────────────────────────────────────────────────────────────
 {
+  # ── Centered header with badges ──────────────────────────────────────────
   echo '<div align="center">'
   echo
-  echo "# Marble Kernel"
+  echo "# 🪨 Marble Kernel"
   echo
   echo "### Poco F5 · Redmi Note 12 Turbo"
   echo
@@ -76,75 +128,106 @@ build_badge_url="https://img.shields.io/badge/Build-Passing-2088FF?style=for-the
   echo "[![Device](${device_badge_url})](https://github.com/${source_repo})"
   echo "[![Build](${build_badge_url})](${workflow_run})"
   echo
-  echo "**${build_date}** &nbsp;·&nbsp; **Run #${run_number}** &nbsp;·&nbsp; [View workflow](${workflow_run})"
+  echo "<br>"
+  echo
+  echo "🕐 **${build_date}** &nbsp;·&nbsp; 🔢 **Run #${run_number:-${build_id}}** &nbsp;·&nbsp; 🔗 **[View Workflow](${workflow_run})**"
   echo
   echo '</div>'
   echo
   echo "---"
   echo
 
-  echo "## ${EMOJI_BUILD} Build Configuration"
+  # ── Build Configuration ──────────────────────────────────────────────────
+  echo "## ⚙️ Build Configuration"
   echo
   echo "| | |"
   echo "|:---|:---|"
-  summary_emit_config_rows info "${BUILD_SCOPE}"
+  echo "| 📱 **Device** | Poco F5 (\`marblein\`) · Redmi Note 12 Turbo (\`marble\`) |"
+  echo "| 🟠 **ROM Support** | **${rom_support}** |"
+  if [[ -n "${kernel_source_author}" || -n "${kernel_source_id}" ]]; then
+    _ks_label="${kernel_source_author:-${kernel_source_id}}"
+    _ks_id="${kernel_source_id:-unknown}"
+    if [[ -n "${source_repo}" ]]; then
+      echo "| 👤 **Kernel Source** | **${_ks_label}** ([\`${_ks_id}\`](https://github.com/${source_repo})) |"
+    else
+      echo "| 👤 **Kernel Source** | **${_ks_label}** (\`${_ks_id}\`) |"
+    fi
+  fi
+  echo "| 🧬 **Kernel Base** | \`android12-5.10\` |"
+  echo "| 🛠️ **Build Scope** | \`${BUILD_SCOPE}\` |"
+  if [[ -n "${package_family}" ]]; then
+    echo "| 🏷️ **Package Family** | \`${package_family}\` |"
+  fi
+  echo "| 🧪 **Quality** | \`${quality_label}\` |"
+  echo "| 🔗 **LTO** | \`${lto_mode}\` |"
+  if [[ -n "${toolchain_id}" ]]; then
+    echo "| 🧰 **Toolchain** | \`${toolchain_id}\` |"
+  fi
+  echo "| 📦 **Source** | [\`${source_ref} @ $(short_commit "${source_commit}")\`](https://github.com/${source_repo}/commit/${source_commit}) |"
+  echo "| 🔨 **Compiler** | \`${android_clang_version:-clang-r416183b}\` |"
+  if [[ -n "${android_clang_commit}" ]]; then
+    echo "| 🧷 **Compiler Commit** | \`$(short_commit "${android_clang_commit}")\` |"
+  fi
   echo
   echo "---"
   echo
 
+  # ── Cache (CI only — stripped from GitHub Release notes) ──────────────────
   summary_emit_cache_section \
-    "${info[ccache_hit]:-unknown}" \
-    "${info[thinlto_cache_hit]:-n/a}" \
-    "${info[ccache_hit_rate]:-n/a}" \
-    "${info[ccache_direct_rate]:-n/a}" \
+    "${ccache_hit:-unknown}" \
+    "${thinlto_cache_hit:-n/a}" \
     "${release_dir}/ccache-stats.txt"
   echo "---"
   echo
 
+  # ── Manager ──────────────────────────────────────────────────────────────
   if [[ "${manager_name}" == "none" ]]; then
-    echo "## ${EMOJI_MANAGER} Manager — Baseline (No Root)"
+    echo "## 🔑 Manager — Baseline (No Root)"
     echo
-    echo "No root manager is integrated. This is a vanilla kernel build for testing and baseline comparison."
+    echo "No root manager integrated. This is a vanilla kernel build for testing and baseline comparison."
   else
-    echo "## ${EMOJI_MANAGER} Manager — ${manager_label}"
+    echo "## 🔑 Manager — ${manager_display}"
     echo
     echo "| | |"
     echo "|:---|:---|"
-    echo "| **Repository** | [\`${manager_repo} @ ${info[manager_ref]:-}\`](https://github.com/${manager_repo}) |"
-    [[ -n "${info[manager_build_version_name]:-}" ]] && \
-      echo "| **Version name** | \`${info[manager_build_version_name]}\` |"
-    _tag="${info[manager_build_tag]:-${info[manager_tag]:-}}"
-    _code="${info[manager_build_version_code]:-${info[manager_version_code]:-}}"
-    if [[ -n "${_tag}" && -n "${_code}" ]]; then
-      echo "| **Version** | \`${_tag}\` &nbsp;·&nbsp; code \`${_code}\` |"
-    elif [[ -n "${_tag}" ]]; then
-      echo "| **Version** | \`${_tag}\` |"
-    elif [[ -n "${_code}" ]]; then
-      echo "| **Version code** | \`${_code}\` |"
+    echo "| 📁 **Repository** | [\`${manager_repo} @ ${manager_ref}\`](https://github.com/${manager_repo}) |"
+    if [[ -n "${manager_build_version_name}" ]]; then
+      echo "| 🏷️ **Version Name** | \`${manager_build_version_name}\` |"
     fi
-    echo "| **Commit** | [\`$(short_commit "${manager_commit}")\`](https://github.com/${manager_repo}/commit/${manager_commit}) |"
-    [[ -n "${info[manager_setup_sha256]:-}" ]] && \
-      echo "| **setup.sh sha256** | \`${info[manager_setup_sha256]}\` |"
-    [[ -n "${info[manager_signature_size]:-}" ]] && \
-      echo "| **Signature size** | \`${info[manager_signature_size]}\` |"
-    [[ -n "${info[manager_signature_hash]:-}" ]] && \
-      echo "| **Signature hash** | \`${info[manager_signature_hash]}\` |"
-    [[ -n "${info[manager_supported_line]:-}" ]] && \
-      echo "| **Supported managers** | ${info[manager_supported_line]//,/, } |"
+    if [[ -n "${manager_build_tag:-${manager_tag}}" && -n "${manager_build_version_code:-${manager_version_code}}" ]]; then
+      echo "| 🔖 **Version** | \`${manager_build_tag:-${manager_tag}}\` &nbsp;·&nbsp; code \`${manager_build_version_code:-${manager_version_code}}\` |"
+    elif [[ -n "${manager_build_tag:-${manager_tag}}" ]]; then
+      echo "| 🔖 **Version** | \`${manager_build_tag:-${manager_tag}}\` |"
+    elif [[ -n "${manager_build_version_code:-${manager_version_code}}" ]]; then
+      echo "| 🔢 **Version Code** | \`${manager_build_version_code:-${manager_version_code}}\` |"
+    fi
+    echo "| 🔗 **Commit** | [\`$(short_commit "${manager_commit}")\`](https://github.com/${manager_repo}/commit/${manager_commit}) |"
+    if [[ -n "${manager_signature_size}" ]]; then
+      echo "| ✍️ **Signature Size** | \`${manager_signature_size}\` |"
+    fi
+    if [[ -n "${manager_signature_hash}" ]]; then
+      echo "| 🧾 **Signature Hash** | \`${manager_signature_hash}\` |"
+    fi
+    if [[ -n "${manager_supported_line}" ]]; then
+      echo "| 🤝 **Supported Managers** | ${manager_supported_line//,/, } |"
+    fi
     if [[ "${manager_name}" == "kernelsu-next" && "${ENABLE_SUSFS}" == "true" ]]; then
-      echo "| **Note** | Non-SUSFS builds use official \`KernelSU-Next/KernelSU-Next@dev\`; SUSFS builds use \`pershoot/dev-susfs\` |"
+      echo "| 📌 **Note** | Non-SUSFS builds use official \`KernelSU-Next/KernelSU-Next@dev\` · SUSFS builds use \`pershoot/dev-susfs\` |"
     fi
   fi
   echo
   echo "---"
   echo
 
-  echo "## ${EMOJI_SUSFS} SUSFS"
+  # ── SUSFS ────────────────────────────────────────────────────────────────
+  echo "## 🛡️ SUSFS"
   echo
   if [[ "${ENABLE_SUSFS}" == "true" ]]; then
     echo "| | |"
     echo "|:---|:---|"
-    summary_emit_susfs_rows info
+    echo "| 🏷️ **Version** | \`${susfs_display}\` |"
+    echo "| 🌿 **Kernel Branch** | \`${susfs_branch}\` |"
+    echo "| 🔗 **Commit** | [\`$(short_commit "${susfs_commit}")\`](${susfs_url}) |"
     echo
     summary_susfs_module_note
   else
@@ -154,54 +237,63 @@ build_badge_url="https://img.shields.io/badge/Build-Passing-2088FF?style=for-the
   echo "---"
   echo
 
-  echo "## Installation"
+  # ── Installation ─────────────────────────────────────────────────────────
+  echo "## 📲 Installation"
   echo
   echo "<details>"
-  echo "<summary><b>Prerequisites</b> — read before flashing</summary>"
+  echo "<summary><b>📋 Prerequisites</b> — expand before flashing</summary>"
   echo "<br>"
   echo
-  echo "- Unlocked bootloader"
-  echo "- Poco F5 (\`marblein\`) or Redmi Note 12 Turbo (\`marble\`) **only**"
-  echo "- **${rom_support}** — flash only on a matching ROM family"
-  echo "- Stock \`boot.img\` from the **same ROM and firmware**, stored off-device"
-  [[ "${manager_name}" != "none" && -n "${manager_app_link}" ]] && \
-    echo "- [${manager_label} manager app](${manager_app_link})"
-  [[ "${ENABLE_SUSFS}" == "true" ]] && \
-    echo "- [KSU SUSFS module](https://github.com/sidex15/susfs4ksu-module/releases) matching \`${susfs_display}\`"
+  echo "- 🔓 Unlocked bootloader"
+  echo "- 📱 Poco F5 (\`marblein\`) or Redmi Note 12 Turbo (\`marble\`) **only**"
+  echo "- 🟠 **${rom_support}** — flash only on a matching ROM family"
+  echo "- 💾 Stock \`boot.img\` from the **same ROM/firmware** stored safely outside the device"
+  if [[ "${manager_name}" != "none" && -n "${manager_app_url}" ]]; then
+    echo "- 📦 [${manager_display} manager app](${manager_app_url})"
+  fi
+  if [[ "${ENABLE_SUSFS}" == "true" ]]; then
+    echo "- 🧩 [KSU SUSFS module](https://github.com/sidex15/susfs4ksu-module/releases) matching \`${susfs_display}\`"
+  fi
   echo
   echo "</details>"
   echo
   echo "<details>"
-  echo "<summary><b>Flash Steps</b></summary>"
+  echo "<summary><b>⚡ Flash Steps</b></summary>"
   echo "<br>"
   echo
   echo "1. Download \`${zip_name}\`"
-  echo "2. Verify it against the SHA-256 in this summary"
-  echo "3. Flash the ZIP to the active slot with [Kernel Flasher](https://github.com/fatalcoder524/KernelFlasher/releases)"
-  echo "4. AnyKernel3 verifies your device codename and **backs up** the current boot image to \`/sdcard/marble-kernel-backup/\` before writing"
-  [[ "${manager_name}" != "none" ]] && echo "5. Reboot, then install or open the **${manager_label}** manager app"
-  [[ "${ENABLE_SUSFS}" == "true" ]] && echo "6. Install the **KSU SUSFS module**, configure hiding rules, reboot"
+  echo "2. Verify it against the SHA256 shown in this summary before flashing"
+  echo "3. Flash the ZIP to the active slot via **[Kernel Flasher](https://github.com/fatalcoder524/KernelFlasher/releases)**"
+  echo "4. The AnyKernel3 installer will verify your device codename and **automatically back up** your current boot image to \`/sdcard/marble-kernel-backup/\` before writing"
+  if [[ "${manager_name}" != "none" ]]; then
+    echo "5. After boot — install / open the **${manager_display}** manager app"
+  fi
+  if [[ "${ENABLE_SUSFS}" == "true" ]]; then
+    echo "6. Install the **KSU SUSFS module**, configure hiding rules, then reboot"
+  fi
   echo
   echo "</details>"
   echo
-  summary_emit_bootloop_note
+  echo "> [!WARNING]"
+  echo "> **Bootloop?** Flash the stock \`boot.img\` back to the active slot using Kernel Flasher or fastboot. Keep it accessible before flashing."
   echo
   echo "---"
   echo
 
-  echo "## ${EMOJI_ARTIFACT} Artifacts & Checksums"
+  # ── Artifacts & Checksums ────────────────────────────────────────────────
+  echo "## 📦 Artifacts & Checksums"
   echo
   echo "| File | Size | Notes |"
   echo "|:---|:---:|:---|"
   echo "| \`${zip_name}\` | ${zip_size} | Flashable AnyKernel3 zip |"
-  echo "| \`${zip_name}.sha256\` | — | SHA-256 checksum |"
-  echo "| \`build-info.txt\` | — | Exact resolved refs and workflow metadata |"
+  echo "| \`${zip_name}.sha256\` | — | SHA256 checksum |"
+  echo "| \`build-info.txt\` | — | Exact resolved refs + workflow metadata |"
   echo
   echo "<details>"
-  echo "<summary><b>SHA256 Checksums</b></summary>"
+  echo "<summary><b>🔐 SHA256 Checksums</b></summary>"
   echo "<br>"
   echo
-  echo "| Artifact | SHA-256 |"
+  echo "| Artifact | SHA256 |"
   echo "|:---|:---|"
   echo "| \`Image\` | \`${image_sha}\` |"
   echo "| \`.zip\` | \`${zip_sha}\` |"
@@ -211,31 +303,32 @@ build_badge_url="https://img.shields.io/badge/Build-Passing-2088FF?style=for-the
   echo "---"
   echo
 
-  # Credits are derived from build-info — never hardcode a maintainer name.
-  echo "## Credits"
+  # ── Credits (dynamic from build-info — no hardcoded maintainer names) ────
+  echo "## 🙏 Credits"
   echo
   echo "| | |"
   echo "|:---|:---|"
-  credit_author="${info[kernel_source_author]:-${info[kernel_source]:-kernel}}"
+  credit_author="${kernel_source_author:-${kernel_source_id:-kernel}}"
   if [[ -n "${source_repo}" ]]; then
-    echo "| **Kernel source** | [${credit_author}](https://github.com/${source_repo}) (\`${source_repo}\`) |"
+    echo "| 🧑‍💻 **Kernel source** | [${credit_author}](https://github.com/${source_repo}) (\`${source_repo}\`) |"
   else
-    echo "| **Kernel source** | ${credit_author} |"
+    echo "| 🧑‍💻 **Kernel source** | ${credit_author} |"
   fi
-  echo "| **AnyKernel3** | [osm0sis/AnyKernel3](https://github.com/osm0sis/AnyKernel3) |"
+  echo "| 📦 **AnyKernel3** | [osm0sis/AnyKernel3](https://github.com/osm0sis/AnyKernel3) |"
   if [[ "${manager_name}" != "none" && -n "${manager_repo}" ]]; then
-    echo "| **${manager_label}** | [\`${manager_repo}\`](https://github.com/${manager_repo}) |"
+    echo "| 🔑 **${manager_display}** | [\`${manager_repo}\`](https://github.com/${manager_repo}) |"
   elif [[ "${manager_name}" != "none" ]]; then
-    echo "| **${manager_label}** | ${manager_label} |"
+    echo "| 🔑 **${manager_display}** | ${manager_display} |"
   fi
-  [[ "${ENABLE_SUSFS}" == "true" ]] && \
-    echo "| **SUSFS** | [simonpunk/susfs4ksu](https://gitlab.com/simonpunk/susfs4ksu) |"
+  if [[ "${ENABLE_SUSFS}" == "true" ]]; then
+    echo "| 🛡️ **SUSFS** | [simonpunk/susfs4ksu](https://gitlab.com/simonpunk/susfs4ksu) |"
+  fi
   echo
   echo "---"
   echo
   echo '<div align="center">'
   echo
-  echo "Built with **GitHub Actions**"
+  echo "⚡ Built with ❤️ using **GitHub Actions**"
   echo
   echo '</div>'
 } > "${summary}"

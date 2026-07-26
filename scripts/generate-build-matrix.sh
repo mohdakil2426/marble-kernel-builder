@@ -39,18 +39,12 @@ for manager, wanted in selected:
             "manager": manager,
             "enable_susfs": "true" if manager_susfs else "false",
             "label": label,
-            # Every manager in a run shares one cache bucket, and Actions cache
-            # keys are immutable. Without a single elected writer, N parallel
-            # jobs would each upload a multi-GiB entry for the same key.
-            "cache_writer": "false",
         }
     )
 
 if not include:
     print("::error::No managers selected. Enable at least one build_* checkbox.", file=sys.stderr)
     sys.exit(1)
-
-include[0]["cache_writer"] = "true"
 
 matrix = json.dumps({"include": include}, separators=(",", ":"))
 if github_output and github_output != "/dev/null":

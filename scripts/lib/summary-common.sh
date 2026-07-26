@@ -1,37 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2034  # this is a library: its definitions are consumed by the sourcing scripts
-# Shared building blocks for the per-build and combined matrix summaries.
-#
-# Emoji vocabulary is fixed at six symbols, used consistently and nowhere else.
-# tests/test-emoji-vocabulary.sh enforces it.
-#
-#   📱 device   ⚙️ build   🔑 manager   🛡️ SUSFS   📦 artifacts   ⚠️ warning
 
-EMOJI_DEVICE='📱'
-EMOJI_BUILD='⚙️'
-EMOJI_MANAGER='🔑'
-EMOJI_SUSFS='🛡️'
-EMOJI_ARTIFACT='📦'
-EMOJI_WARNING='⚠️'
-
-# ── Reading build metadata ───────────────────────────────────────────────────
-
-# Load a key=value file once into the named associative array. Replaces the
-# per-key `grep` calls that used to re-read build-info.txt six times per
-# manager.
-#   declare -A info; summary_load_info info path/to/build-info.txt
-summary_load_info() {
-  local -n _dest="$1"
-  local file="$2" key value
-  _dest=()
-  [[ -f "${file}" ]] || return 0
-  while IFS='=' read -r key value; do
-    [[ -n "${key}" && "${key}" != \#* ]] || continue
-    _dest["${key}"]="${value%$'\r'}"
-  done < "${file}"
-}
-
-# Kept for callers that only need one field from a file they do not otherwise read.
 summary_get_info() {
   local file="$1"
   local key="$2"
@@ -45,19 +13,6 @@ short_commit() {
   else
     echo "${value:0:7}"
   fi
-}
-
-# Byte count to a compact human string, so summaries can report ZIP size from
-# metadata alone when the artifact holds no ZIP.
-summary_human_size() {
-  local bytes="${1:-}"
-  [[ "${bytes}" =~ ^[0-9]+$ ]] || { echo "—"; return; }
-  awk -v b="${bytes}" 'BEGIN {
-    split("B KiB MiB GiB", unit, " ")
-    i = 1
-    while (b >= 1024 && i < 4) { b /= 1024; i++ }
-    printf (i == 1 ? "%d %s\n" : "%.1f %s\n"), b, unit[i]
-  }'
 }
 
 # Encode a string for use in shields.io badge path segments.
@@ -87,6 +42,29 @@ manager_app_url() {
   esac
 }
 
+summary_susfs_module_note() {
+  cat <<'EOF'
+### SUSFS userspace module
+
+If this build includes **SUSFS**, flash the kernel ZIP **and** install a compatible SUSFS userspace module for your manager (for example [sidex15/susfs4ksu-module](https://github.com/sidex15/susfs4ksu-module/releases)). Kernel patches alone are not enough for full hide functionality.
+EOF
+}
+
+summary_format_ccache_hits() {
+  local f="${1:-}"
+  if [[ -z "${f}" || ! -f "${f}" ]]; then
+    echo "n/a"
+    return
+  fi
+  # Prefer the indented "Hits:" line under Cacheable calls (modern ccache -s).
+  local rate
+  rate="$(grep -E '^[[:space:]]+Hits:' "${f}" | head -n1 | sed -E 's/^[^:]*:[[:space:]]*//')"
+  if [[ -z "${rate}" ]]; then
+    rate="$(grep -Ei 'hit rate|Hits:' "${f}" | head -n1 | sed -E 's/^[^:]*:[[:space:]]*//')"
+  fi
+  echo "${rate:-see ccache-stats.txt}"
+}
+
 summary_quality_label() {
   local kernel_source="${1:-melt}"
   if [[ "${kernel_source}" == "melt" ]]; then
@@ -96,102 +74,27 @@ summary_quality_label() {
   fi
 }
 
-# ── Shared sections ──────────────────────────────────────────────────────────
-
-# Build configuration rows, shared by both summaries. Caller opens the table.
-# Arg: name of an associative array loaded by summary_load_info.
-summary_emit_config_rows() {
-  local -n _info="$1"
-  local scope="${2:-image-only}"
-  local source_repo="${_info[source_repo]:-}"
-  local kernel_id="${_info[kernel_source]:-unknown}"
-  local kernel_label="${_info[kernel_source_author]:-${kernel_id}}"
-
-  echo "| ${EMOJI_DEVICE} **Device** | Poco F5 (\`marblein\`) · Redmi Note 12 Turbo (\`marble\`) |"
-  if [[ -n "${_info[rom_support]:-}" ]]; then
-    echo "| **ROM support** | **${_info[rom_support]}** |"
-  fi
-  if [[ -n "${source_repo}" ]]; then
-    echo "| **Kernel Source** | **${kernel_label}** ([\`${kernel_id}\`](https://github.com/${source_repo})) |"
-  else
-    echo "| **Kernel Source** | **${kernel_label}** (\`${kernel_id}\`) |"
-  fi
-  echo "| **Kernel base** | \`android12-5.10\` |"
-  echo "| ${EMOJI_BUILD} **Build scope** | \`${scope}\` |"
-  [[ -n "${_info[package_family]:-}" ]] && echo "| **Package family** | \`${_info[package_family]}\` |"
-  echo "| **Quality** | \`${_info[quality_label]:-$(summary_quality_label "${kernel_id}")}\` |"
-  echo "| **LTO** | \`${_info[lto]:-thin}\` |"
-  [[ -n "${_info[toolchain]:-}" ]] && echo "| **Toolchain** | \`${_info[toolchain]}\` |"
-  echo "| **Source** | [\`${_info[source_ref]:-} @ $(short_commit "${_info[source_commit]:-}")\`](https://github.com/${source_repo}/commit/${_info[source_commit]:-}) |"
-  echo "| **Compiler** | \`${_info[android_clang_version]:-clang-r416183b}\` |"
-  [[ -n "${_info[android_clang_commit]:-}" ]] && echo "| **Compiler commit** | \`$(short_commit "${_info[android_clang_commit]}")\` |"
-  [[ -n "${_info[kbuild_build_timestamp]:-}" ]] && echo "| **Kernel timestamp** | \`${_info[kbuild_build_timestamp]}\` (pinned to the source commit) |"
-  return 0
-}
-
-# SUSFS table rows. Caller opens the table and decides the heading.
-summary_emit_susfs_rows() {
-  local -n _info="$1"
-  local display="${_info[susfs_reported_version]:-${_info[susfs_version]:-}}"
-  echo "| **Version** | \`${display}\` |"
-  echo "| **Kernel branch** | \`${_info[susfs_kernel_branch]:-}\` |"
-  if [[ -n "${_info[susfs_commit]:-}" ]]; then
-    echo "| **Commit** | [\`$(short_commit "${_info[susfs_commit]}")\`](${_info[susfs_url]:-}) |"
-  fi
-}
-
-summary_susfs_module_note() {
-  cat <<EOF
-### SUSFS userspace module
-
-A SUSFS kernel needs both halves: flash the kernel ZIP **and** install a matching SUSFS userspace module for your manager, for example [sidex15/susfs4ksu-module](https://github.com/sidex15/susfs4ksu-module/releases). Kernel patches alone do not give you full hide functionality.
-EOF
-}
-
-summary_emit_flash_warning() {
-  cat <<EOF
-> [!WARNING]
-> Custom kernels can bootloop or lose data. Artifacts are provided **as-is**.
->
-> - Back up \`boot.img\` from the **same** ROM and firmware, stored off-device
-> - Unlocked bootloader required
-> - **Poco F5** (\`marblein\`) or **Redmi Note 12 Turbo** (\`marble\`) only
-> - Match **device + ROM family** to the build you flash
-> - Verify **SHA-256** before flashing
-EOF
-}
-
-summary_emit_bootloop_note() {
-  cat <<EOF
-> [!WARNING]
-> **Bootloop?** Flash the original \`boot.img\` from the same ROM and firmware back to the active slot with Kernel Flasher or fastboot. Keep that backup reachable **before** you flash.
-EOF
-}
-
-# ── Cache section (CI only — stripped from GitHub Release notes) ─────────────
-
+# Markers wrap CI-only cache details so release notes can strip them.
 SUMMARY_CACHE_START='<!-- marble-ci-cache-start -->'
 SUMMARY_CACHE_END='<!-- marble-ci-cache-end -->'
 
-# Args: ccache_hit thinlto_hit hit_rate direct_rate [path_to_ccache-stats.txt]
+# Emit a cache section to stdout (for CI/artifacts only — stripped before GitHub Release notes).
+# Args: ccache_hit thinlto_hit [path_to_ccache-stats.txt]
+# Mirrors default `ccache -s` text from the artifact when the stats file exists.
 summary_emit_cache_section() {
   local ccache_hit="${1:-unknown}"
   local thinlto_hit="${2:-n/a}"
-  local hit_rate="${3:-n/a}"
-  local direct_rate="${4:-n/a}"
-  local stats_file="${5:-}"
+  local stats_file="${3:-}"
 
   echo "${SUMMARY_CACHE_START}"
-  echo "## Cache"
+  echo "## 💾 Cache"
   echo
   echo "> CI diagnostics only — this section is **not** included in GitHub Release notes."
   echo
   echo "| | |"
   echo "|:---|:---|"
-  echo "| **Actions ccache hit** | \`${ccache_hit}\` |"
-  echo "| **Actions ThinLTO hit** | \`${thinlto_hit}\` |"
-  echo "| **ccache hit rate** | \`${hit_rate:-n/a}\` |"
-  echo "| **ccache direct rate** | \`${direct_rate:-n/a}\` |"
+  echo "| 📦 **Actions ccache hit** | \`${ccache_hit}\` |"
+  echo "| 🧵 **Actions ThinLTO hit** | \`${thinlto_hit}\` |"
   echo
   echo "### ccache -s"
   echo

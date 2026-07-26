@@ -24,7 +24,6 @@ susfs_effective_ref=""
 susfs_commit=""
 susfs_reported_version=""
 susfs_url=""
-susfs_checkout=""
 
 if [[ "${MANAGER}" != "none" ]]; then
   manager_repo="$(jq -r --arg manager "${MANAGER}" '.[$manager].repo' config/managers.json)"
@@ -77,29 +76,30 @@ if [[ "${ENABLE_SUSFS}" == "true" ]]; then
     fi
   fi
 
-  # One blobless clone, kept at SUSFS_CHECKOUT_DIR for apply-susfs.sh to reuse.
-  # It used to be cloned here, deleted, then cloned again in full by apply-susfs.
-  # On failure the tree is removed; cleanup must never fail this step, because
-  # free runners occasionally race on partial-clone temp trees (observed:
-  # `rm: cannot remove '...': Directory not empty` under set -e).
-  susfs_dir="${SUSFS_CHECKOUT_DIR:-susfs4ksu}"
-  remove_susfs_dir() {
-    [[ -d "${susfs_dir}" ]] || return 0
-    chmod -R u+w "${susfs_dir}" 2>/dev/null || true
-    rm -rf "${susfs_dir}" 2>/dev/null || true
+  # Shallow resolve of SUSFS version from simonpunk/susfs4ksu. Cleanup must never
+  # fail this step: free runners occasionally race on partial-clone temp trees
+  # (observed: `rm: cannot remove '...': Directory not empty` under set -e).
+  tmp_susfs="$(mktemp -d)"
+  cleanup_tmp_susfs() {
+    local dir="${1:-}"
+    [[ -n "${dir}" && -d "${dir}" ]] || return 0
+    chmod -R u+w "${dir}" 2>/dev/null || true
+    rm -rf "${dir}" 2>/dev/null || true
   }
-  trap remove_susfs_dir EXIT
+  trap 'cleanup_tmp_susfs "${tmp_susfs}"' EXIT
 
-  remove_susfs_dir
-  git clone --filter=blob:none --no-checkout "${SUSFS_REPO}" "${susfs_dir}"
-  git -C "${susfs_dir}" checkout "${susfs_effective_ref}"
-  susfs_commit="$(git -C "${susfs_dir}" rev-parse HEAD)"
+  git clone --filter=blob:none --no-checkout "${SUSFS_REPO}" "${tmp_susfs}"
+  git -C "${tmp_susfs}" checkout "${susfs_effective_ref}"
+  susfs_commit="$(git -C "${tmp_susfs}" rev-parse HEAD)"
   susfs_reported_version="$(
-    find "${susfs_dir}/kernel_patches" -path '*/include/linux/susfs.h' -type f -print0 2>/dev/null |
+    find "${tmp_susfs}/kernel_patches" -path '*/include/linux/susfs.h' -type f -print0 2>/dev/null |
       xargs -0 -r grep -hoE 'SUSFS_VERSION[[:space:]]+"v[0-9]+\.[0-9]+\.[0-9]+"' 2>/dev/null |
       head -n1 |
       sed -E 's/.*"(v[^"]+)".*/\1/' || true
   )"
+  cleanup_tmp_susfs "${tmp_susfs}"
+  trap - EXIT
+  tmp_susfs=""
 
   # GitLab commit URL for traceability in release notes
   susfs_url="https://gitlab.com/simonpunk/susfs4ksu/-/commit/${susfs_commit}"
@@ -112,10 +112,6 @@ if [[ "${ENABLE_SUSFS}" == "true" ]]; then
     echo "::error::SUSFS version mismatch. Expected ${expected}, got ${susfs_reported_version:-unknown}"
     exit 1
   fi
-
-  # Verified — hand the checkout to apply-susfs.sh instead of deleting it.
-  trap - EXIT
-  susfs_checkout="${susfs_dir}"
 fi
 
 {
@@ -133,5 +129,4 @@ fi
   echo "susfs_commit=${susfs_commit}"
   echo "susfs_reported_version=${susfs_reported_version}"
   echo "susfs_url=${susfs_url}"
-  echo "susfs_checkout=${susfs_checkout}"
 } | tee release/resolved-refs.env

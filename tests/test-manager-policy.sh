@@ -101,16 +101,8 @@ if ksun.get("susfs_ref") != "dev-susfs":
     raise SystemExit("FAIL: KernelSU-Next SUSFS ref must be dev-susfs")
 PY
 
-# setup.sh is fetched at the resolved commit and invoked with it, and the exact
-# bytes that were executed are recorded for provenance.
-if ! grep -q 'raw.githubusercontent.com/${manager_repo}/${manager_commit}/' scripts/patch-manager.sh; then
-  fail "manager setup is not fetched at the resolved official commit"
-fi
-if ! grep -q 'bash "${setup_script}" "${manager_commit}"' scripts/patch-manager.sh; then
-  fail "manager setup is not invoked with the resolved official commit"
-fi
-if ! grep -q 'manager_setup_sha256=' scripts/patch-manager.sh; then
-  fail "the executed manager setup.sh digest must be recorded"
+if ! grep -q 'manager-setup.sh "${manager_commit}"' scripts/patch-manager.sh; then
+  fail "manager setup is not pinned to the resolved official commit"
 fi
 
 echo "Manager source policy tests passed"

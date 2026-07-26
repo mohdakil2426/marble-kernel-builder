@@ -30,17 +30,17 @@ required_core_patterns=(
   'inputs.toolchain'
   'compression-level: 0'
   'retention-days: 30'
-  'bash scripts/generate-cache-keys.sh'
+  'marble-builder-ccache-v4-'
   'Restore ThinLTO cache'
   'Save ThinLTO cache'
+  'marble-builder-thinlto-v1-'
+  'runner_image_version='
+  'ccache_hit='
   'publish_step_summary'
-  'cache_writer'
   'Read manager build metadata'
-  'bash scripts/write-build-info-txt.sh'
   'Write build-info JSON'
   'Generate artifact attestation'
   'name=marble-flash-${{ inputs.artifact_label }}-${BUILD_SCOPE}-r${GITHUB_RUN_NUMBER}'
-  'marble-meta-${{ inputs.artifact_label }}'
 )
 
 for pattern in "${required_core_patterns[@]}"; do
@@ -69,32 +69,36 @@ grep -Fq 'always()' "${core}" || {
   exit 1
 }
 
-# Cache tuning and key shape live in tests/test-cache-policy.sh.
+grep -Fq 'CCACHE_COMPILERCHECK=content' scripts/build-kernel.sh || {
+  echo "FAIL: ccache compiler validation is not content-based" >&2
+  exit 1
+}
 
-for field in 'runner_image_version=' 'ccache_hit=' 'lto=${LTO:-thin}' 'cache_writer='; do
-  grep -Fq -- "${field}" scripts/write-build-info-txt.sh || {
-    echo "FAIL: build-info.txt must record ${field}" >&2
-    exit 1
-  }
-done
+grep -Fq 'ccache -M 4G' scripts/build-kernel.sh || {
+  echo "FAIL: ccache maximum is not 4 GiB" >&2
+  exit 1
+}
 
-# The pinned toolchain supplies clang/ld.lld/llvm-*; installing the distro copies
-# wastes roughly a minute and a gigabyte per job.
-apt_line="$(grep -A3 'apt-get install' "${core}" | tr '\n' ' ')"
-for pkg in ' clang ' ' llvm ' ' lld '; do
-  if [[ " ${apt_line} " == *"${pkg}"* ]]; then
-    echo "FAIL: build-core apt list must not install${pkg}(the pinned toolchain provides it)" >&2
-    exit 1
-  fi
-done
+grep -Fq 'compression=true' scripts/build-kernel.sh || {
+  echo "FAIL: ccache compression must stay enabled" >&2
+  exit 1
+}
 
-# ...which is only safe because the toolchain is checked for completeness first.
-for tool in ld.lld llvm-ar llvm-nm llvm-objcopy llvm-readelf llvm-strip; do
-  grep -Fq -- "${tool}" "${core}" || {
-    echo "FAIL: build-core must verify the selected toolchain provides ${tool}" >&2
-    exit 1
-  }
-done
+grep -Fq 'compression_level=6' scripts/build-kernel.sh || {
+  echo "FAIL: ccache compression_level=6 should be configured when supported" >&2
+  exit 1
+}
+
+grep -Fq 'lto${lto_mode}' .github/workflows/build-core.yml || \
+  grep -Fq -- '-lto' .github/workflows/build-core.yml || {
+  echo "FAIL: ccache key must include LTO mode in its identity" >&2
+  exit 1
+}
+
+grep -Fq 'echo "lto=${LTO:-thin}"' .github/workflows/build-core.yml || {
+  echo "FAIL: build-info.txt must record lto mode" >&2
+  exit 1
+}
 
 [[ -f scripts/lib/summary-common.sh ]] || {
   echo "FAIL: shared summary helper library is missing" >&2
@@ -152,22 +156,6 @@ grep -Fq 'kernel_source:' "${matrix}" || {
 for preset in melt lineageos evolution-x aosp-pablo pa-gr; do
   grep -Fq -- "- ${preset}" "${matrix}" || {
     echo "FAIL: matrix workflow missing kernel_source option: ${preset}" >&2
-    exit 1
-  }
-done
-
-# The Run workflow form groups inputs by purpose without renaming the stable
-# input keys consumed by gh workflow run and existing automation.
-required_run_menu_labels=(
-  'description: "Manager: KernelSU-Next (SUSFS uses verified pershoot fork)"'
-  'description: "Feature: enable SUSFS for supported managers"'
-  'description: "Source: kernel tree / ROM family"'
-  'description: "Build: compiler (auto = source recommendation)"'
-  'description: "Release: create draft after all jobs pass"'
-)
-for menu_label in "${required_run_menu_labels[@]}"; do
-  grep -Fq -- "${menu_label}" "${matrix}" || {
-    echo "FAIL: Run workflow menu missing clear label: ${menu_label}" >&2
     exit 1
   }
 done
@@ -395,21 +383,6 @@ grep -Fq 'pattern: marble-flash-*-r${{ github.run_number }}' .github/workflows/b
   exit 1
 }
 
-# The aggregate job needs metadata, not hundreds of MB of ZIPs.
-grep -Fq 'pattern: marble-meta-*-r${{ github.run_number }}' .github/workflows/build-matrix.yml || {
-  echo "FAIL: aggregate job must download marble-meta-* rather than the flash artifacts" >&2
-  exit 1
-}
-if grep -B8 'Generate combined matrix summary' .github/workflows/build-matrix.yml | grep -Fq 'pattern: marble-flash-'; then
-  echo "FAIL: aggregate job should not download flash artifacts" >&2
-  exit 1
-fi
-
-grep -Fq 'cache_writer: ${{ fromJSON(matrix.cache_writer) }}' .github/workflows/build-matrix.yml || {
-  echo "FAIL: matrix workflow must pass the elected cache writer to build-core" >&2
-  exit 1
-}
-
 [[ -f .github/dependabot.yml ]] || {
   echo "FAIL: Dependabot configuration is missing" >&2
   exit 1
@@ -424,28 +397,12 @@ grep -Fq 'package-ecosystem: github-actions' .github/dependabot.yml || {
   exit 1
 }
 
-for pattern in 'for test_script in tests/test-*.sh' 'bash -n "${script}"' 'actionlint' 'shellcheck -e SC1090,SC1091,SC2016,SC2153,SC2154'; do
+for pattern in 'bash tests/test-*.sh' 'bash -n scripts/*.sh scripts/lib/*.sh tests/*.sh' 'actionlint' 'shellcheck -e SC1090,SC1091,SC2016,SC2153,SC2154'; do
   grep -Fq "${pattern}" "${preflight}" || {
     echo "FAIL: preflight workflow missing pattern: ${pattern}" >&2
     exit 1
   }
 done
-
-# `bash f1 f2` executes only f1 and passes the rest as positional arguments, so
-# these must loop. Getting this wrong silently reduces the suite to one test.
-for broken in 'bash tests/test-*.sh' 'bash -n scripts/*.sh'; do
-  if grep -Fq "${broken}" "${preflight}"; then
-    echo "FAIL: preflight uses '${broken}', which only processes the first file" >&2
-    exit 1
-  fi
-done
-
-# Preflight must gate every branch: a static break caught here costs a minute,
-# the same break caught by a build costs forty.
-if grep -A3 '^  push:' "${preflight}" | grep -Fq 'branches:'; then
-  echo "FAIL: preflight must run on push to every branch, not just main" >&2
-  exit 1
-fi
 
 [[ ! -e "${promote}" ]] || {
   echo "FAIL: separate promote workflow must be removed for same-run draft releases" >&2

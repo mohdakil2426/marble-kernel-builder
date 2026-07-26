@@ -2,7 +2,7 @@
 
 **Audience:** maintainers, contributors, and agents working on CI, packaging, or policy.  
 **Scope:** how `marble-kernel-builder` designs and runs builds — not how to flash a phone (see [README](../README.md)).  
-**Aligned with:** branch `feature/pipeline-cache-docs-overhaul` — v5 shared cache buckets, elected cache writer, reproducible build timestamps, split metadata artifact, six-emoji docs vocabulary.
+**Aligned with:** branch `feature/los-kernel-source-presets` @ tip including naming, toolchain=auto, CI-only Cache section, Wild-style manager version (`338cb9d`+).
 
 ---
 
@@ -261,7 +261,7 @@ There is **no** separate single-build dispatch. One manager or many managers bot
 |-----|--------|------|
 | `setup` | `ubuntu-24.04` | Fast policy subset + `generate-build-matrix.sh` → outputs `matrix` |
 | `build` | Reusable `build-core` | One job per matrix entry; `fail-fast: false` |
-| `aggregate-summary` | `ubuntu-24.04` | Downloads `marble-meta-*-r{run}` (metadata only, not the ZIPs); writes combined summary; uploads summary artifact |
+| `aggregate-summary` | `ubuntu-24.04` | Downloads `marble-flash-*-r{run}`; writes combined summary; uploads summary artifact |
 | `release` | `ubuntu-24.04` | Conditional draft release; `contents: write` only here |
 
 **Concurrency group** (no cancel-in-progress):
@@ -457,9 +457,9 @@ Each matrix entry runs **one** `build-core` job (`timeout-minutes: 120`, `ubuntu
 | Resolve preset | `resolve-kernel-source.sh` |
 | Validate | `validate-inputs.sh` (managers, SUSFS, LTO, source shape) |
 | Checkout kernel | Into `kernel-source/` (`fetch-depth: 1`) |
-| Disk cleanup | `free-disk-space.sh` — relocate hosted SDKs (same-filesystem rename, returns at once), purge in the background under `nice -n 19 ionice -c 3` |
+| Disk cleanup | Aggressive when LTO ≠ none or free space &lt; 40 GiB (dotnet/android/ghc/boost/swift) |
 | Swap | **16 GiB** if `lto != none` (`pierotofy/set-swap-space`) |
-| apt deps | `ccache`, `bc`, `bison`, `flex`, `jq`, `libelf-dev`, `libssl-dev`, … — **no** `clang`/`llvm`/`lld`; the pinned toolchain supplies those |
+| apt deps | `ccache`, `clang`, `lld`, `bc`, `bison`, `flex`, `jq`, … |
 
 ### Stage B — Toolchain
 
@@ -520,9 +520,8 @@ Then:
 ### Stage F — Publish
 
 1. `actions/attest` on `kernel-source/release/*.zip`.  
-2. Upload `marble-flash-<label>-<scope>-r<run>` (zip, sha256, metadata, summary, audit, ccache stats).
-3. Upload `marble-meta-<label>-<scope>-r<run>` — the same text metadata without the ZIP, so the aggregate job pulls kilobytes instead of hundreds of megabytes.
-4. Save ccache / ThinLTO when this job is the elected `cache_writer` and did not restore an exact hit, even if the build **failed** (`!cancelled()`); never on cancel.
+2. Upload artifact `marble-flash-<label>-<scope>-r<run>` (zip, sha256, metadata, summary, audit, ccache stats).  
+3. Save ccache / ThinLTO on **miss** even if the job **failed** (`!cancelled()`); skip on cancel or exact hit.
 
 ### Timeline
 
@@ -621,136 +620,82 @@ Historical note: permanent “force LTO off” for Melt was intentionally **remo
 ## 11. Caching architecture
 
 ```text
-┌────────────────────┐  ┌────────────────────┐  ┌────────────────────┐
-│ Toolchain caches   │  │ Object ccache      │  │ ThinLTO cache      │
-│ clang-r416183b     │  │ ~/.ccache          │  │ ~/.cache/thinlto   │
-│ LLVM 22.1.8        │  │ 2 GiB cap          │  │ 1 GiB cap          │
-│ stable keys        │  │ v5 weekly bucket   │  │ v5 weekly bucket   │
-└────────────────────┘  └────────────────────┘  └────────────────────┘
+┌────────────────────┐     ┌────────────────────┐
+│ Toolchain cache    │     │ Object ccache      │
+│ clang-r416183b or  │     │ ~/.ccache          │
+│ LLVM 22.1.8 tree   │     │ 4G / 6G, content   │
+└────────────────────┘     │ check, v4 keys     │
+                           └────────────────────┘
+┌────────────────────┐
+│ ThinLTO cache      │  only when lto=thin
+│ ~/.cache/thinlto   │  separate Actions key
+└────────────────────┘
 ```
 
-### 11.0 The constraint everything follows from
-
-GitHub gives a repository **10 GB of Actions cache in total**, evicts least-recently-used
-entries once that is exceeded, and deletes anything untouched for **7 days**. Restores are
-branch-scoped: a run can read caches from its own branch and from the default branch, and
-nothing else.
-
-Ten gigabytes is roughly one build's worth. Every rule below exists to fit inside it.
-
 ### 11.1 Toolchain caches
-
-Stable keys, touched on every run, so LRU keeps them warm.
 
 | Toolchain | Cache path | Key sketch |
 |-----------|------------|------------|
 | Android clang | `android-clang` | `marble-builder-clang-v3-…-clang-r416183b-6e3223f` |
 | LLVM 22.1.8 | `llvm-22.1.8` | `marble-builder-llvm-v1-…-22.1.8-df0e1ecf` |
 
-### 11.2 Object caches — the v5 key
+### 11.2 Ccache (object)
 
-`scripts/generate-cache-keys.sh` builds one bucket per *(toolchain, LTO mode, kernel
-source)*, rotated weekly:
-
-```text
-bucket  = marble-{ccache|thinlto}-v5-{os}-{arch}-{toolchain}-lto{mode}-{kernel_source}
-key     = {bucket}-{code_hash}-w{isoweek}
-restore = {bucket}-{code_hash}-   (any week, identical build semantics)
-          {bucket}-               (any code_hash, same build target)
-```
-
-`code_hash` is eight hex characters of a SHA-256 over `scripts/build-kernel.sh` and
-`config/marble.env` — the only two files that change compilation semantics.
-
-**What is deliberately absent, and why.** The previous v4 key embedded `source_commit`,
-`manager_commit`, and `susfs_commit`. Those track moving branches, so the primary key missed
-on *every* run: each build uploaded a fresh multi-GiB entry, and with five managers running
-in parallel the matrix pushed 20–30 GB into a 10 GB budget. Nothing that varies per run may
-appear in the key again; `tests/test-cache-policy.sh` enforces that.
-
-| Removed | Reason |
+| Setting | Value |
 |---------|--------|
-| `source_commit` | Moves every run — guaranteed primary-key miss |
-| `manager`, `manager_commit` | Manager objects are a rounding error against the kernel tree |
-| `susfs_commit` | Same |
-| `build_scope` | `full` is a superset of `image-only`; sharing helps both |
-| `kernel-sources.json`, `managers.json`, `susfs-refs.json` from `code_hash` | Adding a preset must not invalidate every cache in the repository |
+| Size | **4 GiB** (Android clang) · **6 GiB** (LLVM 22) |
+| Compiler check | `CCACHE_COMPILERCHECK=content` |
+| Compression | on (level 6 when supported) |
+| Key prefix | `marble-builder-ccache-v4-…` |
 
-There is no bucket-wide `marble-ccache-v5-` fallback on purpose: restoring another kernel
-source's cache costs a multi-GB download for near-zero hits.
-
-### 11.3 Single cache writer
-
-Actions cache keys are immutable, so concurrent matrix jobs writing the same key is pure
-waste. `generate-build-matrix.sh` marks exactly one include entry `cache_writer: "true"`
-(the first selected manager in canonical order), and `build-core.yml` gates both save steps
-on that input. It defaults to `true`, so direct callers such as the weekly smoke still save.
-
-### 11.4 ccache tuning
-
-Set in `build-kernel.sh`, which is inside `code_hash`, so changing any of these correctly
-invalidates the bucket.
-
-| Setting | Value | Reason |
-|---------|-------|--------|
-| `max_size` | **2G** | Leaves room for both toolchain caches and the ThinLTO cache inside 10 GB |
-| `compression_level` | **1** | ccache manual: high levels "may slow down compilations noticeably" |
-| `compiler_check` | `content` | Toolchain identity, not mtime |
-| `hash_dir` | `false` | Path-independent hits |
-| `sloppiness` | `include_file_mtime,include_file_ctime,time_macros,locale,system_headers` | The tree is re-cloned every run, so every include mtime is fresh; ccache otherwise refuses direct mode |
-| `inode_cache` | `true` | Cuts include-hashing time |
-
-Overridable for self-hosted runners via `MARBLE_CCACHE_SIZE`,
-`MARBLE_CCACHE_COMPRESS_LEVEL`, `MARBLE_CCACHE_SLOPPINESS`.
-
-**Rejected on purpose.** WildKernels' `cache-ccache-setup` sets three things Marble does not:
-
-| Setting | Why not |
-|---------|---------|
-| `CCACHE_FILE_CLONE=true` | ccache manual: cloned files "cannot be compressed, so the cache size will likely be significantly larger" — wrong for a 10 GB budget |
-| `CCACHE_BASEDIR` | The manual calls it "a brittle hack" that breaks dependency files; `hash_dir=false` already covers us and hosted workspace paths are stable |
-| `CCACHE_MAXSIZE=12G` | A single entry would consume the whole repository allowance |
-
-`CCACHE_DEPEND` is also left off. It removes the preprocessor pass on a miss, but the ccache
-manual lists "lower hit rate" as the explicit cost. The hit-rate reporting in §11.6 makes
-that a measurable decision rather than a guess.
-
-### 11.5 ThinLTO cache
-
-`build-kernel.sh` writes an `ld.lld` wrapper that passes:
+**Exact key hierarchy** (most specific first for restore-keys fallback):
 
 ```text
---thinlto-jobs=2
---thinlto-cache-dir=~/.cache/thinlto
---thinlto-cache-policy=cache_size_bytes=1g:prune_after=168h
+key =
+  marble-builder-ccache-v4-{os}-{arch}-{toolchain}-lto{mode}
+    -{kernel_source}
+    -{source_commit}
+    -{manager}
+    -{manager_commit}-{susfs_commit}-{build_scope}-{config_hash}
+
+restore-keys (prefix match, broadest last):
+  manager_prefix-
+  source_prefix-
+  kernel_prefix-
+  base-
 ```
 
-The policy is not optional. LLVM's default is `cache_size = 75%` of free disk
-(`CachePruning.h`), which on a hosted runner means tens of gigabytes — a single save would
-evict every other cache in the repository.
+`config_hash` hashes: `build-kernel.sh`, `marble.env`, `managers.json`, `susfs-refs.json`, `kernel-sources.json`, `resolve-kernel-source.sh`.
 
-### 11.6 Hit-rate reporting
-
-`build-kernel.sh` derives hit rate and direct rate from `ccache -s` and writes them into
-`resolved-refs.env` → `build-info` → the summaries. The raw `ccache -s` text stays in the
-per-build summary and the `ccache-stats.txt` artifact; the matrix summary shows one table of
-percentages rather than N copies of the blob.
-
-### 11.7 Save policy
-
-Object caches (ccache, ThinLTO) save when:
+### 11.3 ThinLTO cache
 
 ```text
-always() && !cancelled() && inputs.cache_writer && cache-hit != 'true'
+thinlto_key =
+  marble-builder-thinlto-v1-{os}-{arch}-{toolchain}-{kernel_id}-{source_commit}-lto{mode}
+
+thinlto_prefix (restore-keys) =
+  marble-builder-thinlto-v1-{os}-{arch}-{toolchain}-{kernel_id}-lto{mode}
 ```
 
-A build that fails at 90% compile still persists its partial objects. A manual cancel does
-not save. An exact key that already hit is skipped, because Actions keys are immutable.
+Path restored/saved: `/home/runner/.cache/thinlto`.
 
-**Product artifacts** — ZIP upload, attestation, draft release — remain success-only.
+### 11.4 Save policy
 
-Bump the version prefix (`v5` → `v6`) when key semantics change, so stale buckets cannot
-poison builds.
+GitHub Actions **exact keys are immutable**. Marble saves **object caches** (ccache / ThinLTO) when:
+
+```text
+always() && !cancelled() && cache-hit != 'true'
+```
+
+So a build that fails at ~90% compile still persists partial objects for the next run. Manual cancel does not save. Exact key already hit → skip save (immutable).
+
+**Product artifacts** (ZIP upload, attestation, draft release) remain **success-only**.
+
+Bump the **version prefix** (`v4`, `v1`, …) when key semantics change so stale buckets do not poison builds.
+
+### 11.5 Comparison note
+
+WildKernels often uses composite actions + separate LTO cache buckets and multi-device matrices. Marble’s stack is intentionally smaller but includes the same *ideas*: multi-prefix restore, ThinLTO cache, swap, and disk free.
 
 ---
 
@@ -876,9 +821,7 @@ Shared summary helpers live in `scripts/lib/summary-common.sh`.
 |------|--------|
 | `test-kernel-sources.sh` | Preset resolution, defconfig modes |
 | `test-lto-policy.sh` | LTO validation / workflow defaults |
-| `test-workflow-policy.sh` | Pins, swap, apt set, toolchain completeness, matrix wiring |
-| `test-cache-policy.sh` | v5 key shape, size caps, ThinLTO policy, single cache writer |
-| `test-emoji-vocabulary.sh` | Docs and summaries stay inside the six approved emoji |
+| `test-workflow-policy.sh` | Pins, swap, caches, matrix wiring |
 | `test-manager-policy.sh` | Allowlist + SUSFS matrix rules |
 | `test-matrix-generator.sh` | Checkbox → JSON include rows |
 | `test-susfs-presets.sh` | Version pins |
@@ -927,20 +870,16 @@ Policy tests run with related env vars **unset** so ambient CI env cannot fake p
 | Script | Phase | Responsibility |
 |--------|-------|----------------|
 | `resolve-kernel-source.sh` | Bootstrap | Map `KERNEL_SOURCE` → repo/ref/defconfig/ROM labels |
-| `resolve-toolchain.sh` | Bootstrap | Resolve `toolchain=auto` from the preset, reusing the existing resolve |
 | `validate-inputs.sh` | Bootstrap | Reject illegal manager/SUSFS/LTO/source combos |
-| `generate-build-matrix.sh` | Matrix setup | Checkboxes → JSON strategy matrix; elects one `cache_writer` |
-| `generate-cache-keys.sh` | Identity | v5 ccache / ThinLTO keys and restore chains |
-| `free-disk-space.sh` | Bootstrap | Relocate hosted SDKs, purge in the background |
-| `resolve-refs.sh` | Identity | Pin manager + SUSFS to exact commits; clone susfs4ksu once for `apply-susfs.sh` to reuse |
+| `generate-build-matrix.sh` | Matrix setup | Checkboxes → JSON strategy matrix |
+| `resolve-refs.sh` | Identity | Pin manager + SUSFS to exact commits |
 | `apply-kernel-source-patches.sh` | Integrate | Optional preset/ref-gated source overlays (e.g. pa-gr) |
-| `patch-manager.sh` | Integrate | Run allowlisted manager `setup.sh` at the pinned commit; record its sha256 |
-| `apply-susfs.sh` | Integrate | Kernel SUSFS patch + manager Kconfig gate (reuses the resolve-refs checkout) |
-| `build-kernel.sh` | Compile | Defconfig, LTO, ccache/ThinLTO tuning, pinned build timestamp, make, Image validation |
+| `patch-manager.sh` | Integrate | Run allowlisted manager `setup.sh` |
+| `apply-susfs.sh` | Integrate | Kernel SUSFS patch + manager Kconfig gate |
+| `build-kernel.sh` | Compile | Defconfig, LTO, make, Image validation |
 | `read-manager-version.sh` | Metadata | Makefile version (optional) |
 | `read-manager-build-metadata.sh` | Metadata | Log-derived manager version fields |
 | `package-anykernel.sh` | Package | Pin AK3, overlay, ZIP + sha256 |
-| `write-build-info-txt.sh` | Metadata | Flat key=value provenance record (was inline YAML) |
 | `write-build-info-json.sh` | Metadata | Structured build-info |
 | `audit-flashable-zip.sh` | Package | Structural ZIP audit |
 | `generate-build-summary.sh` | Summary | Per-job summary.md |

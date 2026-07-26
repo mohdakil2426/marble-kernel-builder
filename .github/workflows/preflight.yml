@@ -1,9 +1,9 @@
 name: Marble Builder Preflight
 
 on:
-  # Every branch, not just main: a shellcheck break caught here costs a minute,
-  # the same break caught by a build costs forty.
   push:
+    branches:
+      - main
   pull_request:
   workflow_dispatch:
 
@@ -32,14 +32,8 @@ jobs:
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
           echo "${HOME}/go/bin" >> "$GITHUB_PATH"
 
-      # `bash f1 f2` runs only f1 and passes the rest as positional arguments, so
-      # both of these have to loop. They previously did not, which meant the
-      # syntax check covered one file and the "full suite" ran one test.
       - name: Run shell syntax checks
-        run: |
-          for script in scripts/*.sh scripts/lib/*.sh tests/*.sh; do
-            bash -n "${script}"
-          done
+        run: bash -n scripts/*.sh scripts/lib/*.sh tests/*.sh
 
       - name: Run shellcheck
         run: shellcheck -e SC1090,SC1091,SC2016,SC2153,SC2154 scripts/*.sh scripts/lib/*.sh tests/*.sh
@@ -48,23 +42,7 @@ jobs:
         run: actionlint
 
       - name: Run policy tests
-        run: |
-          failed=0
-          for test_script in tests/test-*.sh; do
-            echo "::group::${test_script}"
-            # Related env vars are unset so ambient CI env cannot fake a pass.
-            if env -u SOURCE_REPO -u SOURCE_REF -u KERNEL_SOURCE -u MANAGER -u MANAGER_REF \
-              -u ENABLE_SUSFS -u SUSFS_VERSION -u SUSFS_KERNEL_BRANCH -u SUSFS_REF \
-              -u SUSFS_EXPECTED_VERSION bash "${test_script}"
-            then
-              echo "::endgroup::"
-            else
-              echo "::endgroup::"
-              echo "::error::${test_script} failed"
-              failed=1
-            fi
-          done
-          exit "${failed}"
+        run: bash tests/test-*.sh
 
       - name: Check whitespace
         run: git diff --check

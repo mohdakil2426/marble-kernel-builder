@@ -7,6 +7,3 @@
 /matrix-summary.md
 /matrix-summary-release.md
 
-
-# Ephemeral SUSFS checkout shared by resolve-refs.sh and apply-susfs.sh
-/susfs4ksu/

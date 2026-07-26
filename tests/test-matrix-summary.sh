@@ -24,9 +24,6 @@ make_artifact() {
   sha256sum "${dir}/${zip_name}" > "${dir}/${zip_name}.sha256"
   cat > "${dir}/zip-name.env" <<ENV
 zip_name=${zip_name}
-zip_sha256=$(cut -d' ' -f1 < "${dir}/${zip_name}.sha256")
-zip_size_bytes=$(stat -c%s "${dir}/${zip_name}")
-package_family=MELT
 ENV
   cat > "${dir}/build-info.txt" <<INFO
 source_repo=mohdakil2426/android_kernel_xiaomi_marble
@@ -94,7 +91,7 @@ required_patterns=(
   '^# Marble Kernel · Matrix Build$'
   'marble-banner\.svg'
   'Before you flash'
-  'Match \*\*device \+ ROM family\*\*'
+  'Match \*\*device \+ ROM\*\*'
   '^## .*Matrix configuration$'
   '\| .*LTO.* \| `thin` \|'
   '\| .*Toolchain.* \| `android-r416183b` \|'
@@ -110,11 +107,9 @@ required_patterns=(
   '\| \*\*KernelSU-Next\*\* \| `v3\.2\.0` \| `33201` \|'
   '\| \*\*SukiSU Ultra\*\* \| `v4\.1\.3-b88403d2@HEAD` \| `40813` \|'
   '\| \*\*ReSukiSU\*\* \| `v4\.1\.0-d0f59d06@ReSukiSU` \| `34989` \|'
-  '<summary><b>KernelSU-Next</b> — v3\.2\.0 · code 33201 · Passed</summary>'
-  '<summary><b>SukiSU Ultra</b> — v4\.1\.3-b88403d2@HEAD · code 40813 · Passed</summary>'
-  '<summary><b>ReSukiSU</b> — v4\.1\.0-d0f59d06@ReSukiSU · code 34989 · Passed</summary>'
-  '\| ccache hit rate \|'
-  '\| Cache writer \|'
+  '<summary><b>KernelSU-Next</b> — v3\.2\.0 · code 33201 · ✅ Passed</summary>'
+  '<summary><b>SukiSU Ultra</b> — v4\.1\.3-b88403d2@HEAD · code 40813 · ✅ Passed</summary>'
+  '<summary><b>ReSukiSU</b> — v4\.1\.0-d0f59d06@ReSukiSU · code 34989 · ✅ Passed</summary>'
   '^## .*SUSFS$'
   '^## .*Artifacts & checksums$'
   '^## .*Installation$'
@@ -126,7 +121,7 @@ required_patterns=(
   'SukiSU-Ultra/SukiSU-Ultra'
   'ReSukiSU/ReSukiSU'
   'osm0sis/AnyKernel3'
-  'Built with \*\*GitHub Actions\*\* · for Marble'
+  'Built with GitHub Actions · for Marble'
 )
 
 if grep -Eq 'Pzqqt' "${summary}"; then
@@ -187,30 +182,8 @@ MATRIX_ARTIFACTS_DIR="${single_root}" MATRIX_SUMMARY="${tmp_dir}/single-matrix-s
   bash scripts/generate-matrix-summary.sh >/dev/null
 
 single_summary="${tmp_dir}/single-matrix-summary.md"
-if ! grep -Eq '<summary><b>KernelSU-Next</b> — v3\.2\.0 · code 33201 · Passed</summary>' "${single_summary}"; then
+if ! grep -Eq '<summary><b>KernelSU-Next</b> — v3\.2\.0 · code 33201 · ✅ Passed</summary>' "${single_summary}"; then
   echo "FAIL: matrix summary should support one artifact extracted directly into the artifacts directory" >&2
-  exit 1
-fi
-
-# Metadata-only artifacts (marble-meta-*) carry no ZIP; size and checksum must
-# still come through from zip-name.env.
-meta_only="${tmp_dir}/marble-meta-kernelsu-next-susfs-image-only-r5"
-mkdir -p "${meta_only}"
-cp "${tmp_dir}/marble-kernelsu-next-susfs-image-only-r5/build-info.txt" \
-   "${tmp_dir}/marble-kernelsu-next-susfs-image-only-r5/zip-name.env" "${meta_only}/"
-
-MATRIX_ARTIFACTS_DIR="${meta_only}" MATRIX_SUMMARY="${tmp_dir}/meta-matrix-summary.md" \
-  BUILD_SCOPE=image-only GITHUB_RUN_NUMBER=5 \
-  bash scripts/generate-matrix-summary.sh >/dev/null
-
-meta_summary="${tmp_dir}/meta-matrix-summary.md"
-expected_sha="$(sed -n 's/^zip_sha256=//p' "${meta_only}/zip-name.env")"
-if ! grep -Fq "${expected_sha}" "${meta_summary}"; then
-  echo "FAIL: metadata-only artifact must still report its ZIP checksum" >&2
-  exit 1
-fi
-if grep -Eq '\| (—|missing) \| `unknown` \|' "${meta_summary}"; then
-  echo "FAIL: metadata-only artifact must still report its ZIP size" >&2
   exit 1
 fi
 

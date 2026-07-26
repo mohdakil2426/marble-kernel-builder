@@ -17,16 +17,10 @@ if [[ -z "${susfs_commit}" || -z "${susfs_kernel_branch}" ]]; then
   exit 1
 fi
 
-# resolve-refs.sh already cloned and verified this tree at the pinned commit.
-# Only clone when running standalone.
-susfs_dir="${susfs_checkout:-}"
-if [[ -z "${susfs_dir}" || ! -d "${susfs_dir}/.git" ]]; then
-  susfs_dir="${SUSFS_CHECKOUT_DIR:-susfs4ksu}"
-  rm -rf "${susfs_dir}"
-  git clone --filter=blob:none --no-checkout "${SUSFS_REPO}" "${susfs_dir}"
-fi
-git -C "${susfs_dir}" checkout --quiet "${susfs_commit}"
-susfs_dir="$(cd "${susfs_dir}" && pwd)"
+work_root="$(pwd)"
+susfs_dir="${work_root}/susfs4ksu"
+git clone "${SUSFS_REPO}" "${susfs_dir}"
+git -C "${susfs_dir}" checkout "${susfs_commit}"
 
 patch_root="${susfs_dir}/kernel_patches"
 if [[ ! -d "${patch_root}" ]]; then

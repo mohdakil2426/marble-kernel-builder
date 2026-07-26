@@ -4,31 +4,31 @@ on:
   workflow_dispatch:
     inputs:
       build_none:
-        description: "Manager: none (baseline no-root)"
+        description: "Build: none (baseline no-root)"
         type: boolean
         default: false
       build_kernelsu:
-        description: "Manager: KernelSU (SUSFS unsupported)"
+        description: "Build: KernelSU (no SUSFS)"
         type: boolean
         default: false
       build_kernelsu_next:
-        description: "Manager: KernelSU-Next (SUSFS uses verified pershoot fork)"
+        description: "Build: KernelSU-Next"
         type: boolean
         default: false
       build_sukisu_ultra:
-        description: "Manager: SukiSU Ultra"
+        description: "Build: SukiSU Ultra"
         type: boolean
         default: false
       build_resukisu:
-        description: "Manager: ReSukiSU"
+        description: "Build: ReSukiSU"
         type: boolean
         default: false
       enable_susfs:
-        description: "Feature: enable SUSFS for supported managers"
+        description: "Enable SUSFS (applies to KSUNext, SukiSU Ultra, ReSukiSU)"
         type: boolean
         default: false
       susfs_version:
-        description: "Feature: SUSFS preset version"
+        description: SUSFS preset version
         type: choice
         default: v2.2.0
         options:
@@ -36,11 +36,11 @@ on:
           - v2.1.0
           - custom
       susfs_ref:
-        description: "Feature: custom SUSFS ref (custom preset only)"
+        description: "SUSFS branch/tag/commit (only for custom version)"
         required: false
         default: ""
       kernel_source:
-        description: "Source: kernel tree / ROM family"
+        description: "Kernel source (named by project/author)"
         type: choice
         default: melt
         options:
@@ -50,18 +50,18 @@ on:
           - aosp-pablo
           - pa-gr
       source_ref:
-        description: "Source: override ref (empty = preset default)"
+        description: "Override branch/tag/commit (empty = preset default)"
         required: false
         default: ""
       build_scope:
-        description: "Build: output scope"
+        description: Build target set
         type: choice
         default: image-only
         options:
           - image-only
           - full
       toolchain:
-        description: "Build: compiler (auto = source recommendation)"
+        description: "Compiler toolchain (auto = preset recommended, e.g. llvm-22 for LOS)"
         type: choice
         default: auto
         options:
@@ -69,7 +69,7 @@ on:
           - android-r416183b
           - llvm-22.1.8
       lto:
-        description: "Build: LTO (thin default; full needs more RAM)"
+        description: "Clang LTO mode (thin=default free-runner safe; full needs more RAM)"
         type: choice
         default: thin
         options:
@@ -77,11 +77,11 @@ on:
           - thin
           - full
       enable_ccache:
-        description: "CI: use ccache"
+        description: Enable ccache
         type: boolean
         default: true
       create_draft_release:
-        description: "Release: create draft after all jobs pass"
+        description: Create a draft GitHub release when the build succeeds
         type: boolean
         default: false
 
@@ -162,7 +162,6 @@ jobs:
       artifact_label: ${{ matrix.label }}
       run_policy_tests: false
       publish_step_summary: false
-      cache_writer: ${{ fromJSON(matrix.cache_writer) }}
 
   aggregate-summary:
     name: Generate combined matrix summary
@@ -178,12 +177,10 @@ jobs:
         with:
           persist-credentials: false
 
-      # Metadata only: the ZIPs are not needed to write a summary, and skipping
-      # them saves a multi-hundred-MB download per matrix entry.
-      - name: Download matrix metadata
+      - name: Download matrix flash artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: marble-meta-*-r${{ github.run_number }}
+          pattern: marble-flash-*-r${{ github.run_number }}
           path: matrix-artifacts
           merge-multiple: false
 

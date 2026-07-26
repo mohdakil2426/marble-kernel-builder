@@ -63,14 +63,6 @@ on:
         required: false
         type: boolean
         default: true
-      cache_writer:
-        description: >-
-          Whether this job saves the shared ccache / ThinLTO buckets. The matrix
-          elects exactly one writer; Actions cache keys are immutable, so
-          parallel managers would otherwise race to upload the same key.
-        required: false
-        type: boolean
-        default: true
 
 jobs:
   build:
@@ -140,12 +132,22 @@ jobs:
       - name: Apply kernel source-local patches
         run: bash scripts/apply-kernel-source-patches.sh
 
-      # Relocating the hosted SDKs is a same-filesystem rename, so this returns at
-      # once and the delete runs at idle priority alongside the compile instead of
-      # blocking it for a minute. Space frees progressively, long before link time.
-      - name: Free runner disk space
+      - name: Check runner disk space
         id: disk-space
-        run: bash scripts/free-disk-space.sh
+        run: |
+          available_gib="$(df --output=avail -BG / | tail -n1 | tr -dc '0-9')"
+          echo "available_gib=${available_gib}" >> "$GITHUB_OUTPUT"
+          # Wild-style: always free hosted SDKs for kernel builds so LTO + ccache have room.
+          # More aggressive messaging when free space is already low.
+          if (( available_gib < 40 )) || [[ "${{ inputs.lto }}" != "none" ]]; then
+            echo "Freeing hosted-runner SDKs (free=${available_gib} GiB, lto=${{ inputs.lto }})"
+            sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+              /usr/local/share/boost /usr/share/swift || true
+          else
+            echo "${available_gib} GiB free and LTO=none; light cleanup only"
+            sudo rm -rf /usr/share/dotnet /opt/ghc || true
+          fi
+          df -h /
 
       - name: Setup swap for LTO
         if: ${{ inputs.lto != 'none' }}
@@ -153,15 +155,13 @@ jobs:
         with:
           swap-size-gb: 16
 
-      # No clang/llvm/lld here: the pinned toolchain supplies clang, ld.lld and
-      # the llvm-* binutils that LLVM=1 needs, and "Select active toolchain"
-      # asserts they are all present before any compilation starts.
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             bc bison build-essential ccache cpio curl flex git jq kmod libelf-dev \
-            libssl-dev file python3 python-is-python3 rsync unzip zip zstd
+            libncurses-dev libssl-dev lld llvm clang file python3 python-is-python3 \
+            rsync unzip zip zstd
 
       - name: Restore Android kernel clang
         if: ${{ env.TOOLCHAIN == 'android-r416183b' }}
@@ -257,16 +257,7 @@ jobs:
               exit 1
               ;;
           esac
-          # LLVM=1 drives kbuild through the toolchain's own binutils. Assert the
-          # full set now: a gap here fails in seconds instead of mid-link.
-          missing=()
-          for tool in clang ld.lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-readelf llvm-strip; do
-            [[ -x "${active_bin}/${tool}" ]] || missing+=("${tool}")
-          done
-          if (( ${#missing[@]} > 0 )); then
-            echo "::error::Toolchain ${active_id} is missing required tools in ${active_bin}: ${missing[*]}"
-            exit 1
-          fi
+          test -x "${active_bin}/clang"
           {
             echo "ANDROID_CLANG_BIN=${active_bin}"
             echo "ACTIVE_TOOLCHAIN_ID=${active_id}"
@@ -279,11 +270,37 @@ jobs:
       - name: Resolve refs
         run: bash scripts/resolve-refs.sh
 
-      # Also runs for thin LTO so ThinLTO keys exist when ccache is disabled.
-      - name: Generate cache keys
-        id: cache-keys
+      - name: Generate ccache key
+        id: cache-context
+        # Also run for thin LTO so ThinLTO Actions cache keys exist when ccache is disabled.
         if: ${{ inputs.enable_ccache || inputs.lto == 'thin' }}
-        run: bash scripts/generate-cache-keys.sh
+        run: |
+          source config/marble.env
+          source release/resolved-refs.env
+          config_hash="$(sha256sum scripts/build-kernel.sh config/marble.env config/managers.json \
+            config/susfs-refs.json config/kernel-sources.json scripts/resolve-kernel-source.sh \
+            scripts/apply-kernel-source-patches.sh \
+            $(find patches/kernel-sources -type f 2>/dev/null | sort || true) \
+            | sha256sum | cut -d' ' -f1)"
+          toolchain_id="${ACTIVE_TOOLCHAIN_ID:-${TOOLCHAIN}}"
+          lto_mode="${LTO:-thin}"
+          kernel_id="${KERNEL_SOURCE:-unknown}"
+          # v4: richer restore-keys (toolchain+lto, then kernel, then source, then manager).
+          base="marble-builder-ccache-v4-${RUNNER_OS}-${RUNNER_ARCH}-${toolchain_id}-lto${lto_mode}"
+          kernel_prefix="${base}-${kernel_id}"
+          source_prefix="${kernel_prefix}-${source_commit}"
+          manager_prefix="${source_prefix}-${MANAGER}"
+          key="${manager_prefix}-${manager_commit:-none}-${susfs_commit:-none}-${BUILD_SCOPE}-${config_hash}"
+          {
+            echo "key=${key}"
+            echo "base=${base}"
+            echo "kernel_prefix=${kernel_prefix}"
+            echo "source_prefix=${source_prefix}"
+            echo "manager_prefix=${manager_prefix}"
+            echo "lto_mode=${lto_mode}"
+            echo "thinlto_key=marble-builder-thinlto-v1-${RUNNER_OS}-${RUNNER_ARCH}-${toolchain_id}-${kernel_id}-${source_commit}-lto${lto_mode}"
+            echo "thinlto_prefix=marble-builder-thinlto-v1-${RUNNER_OS}-${RUNNER_ARCH}-${toolchain_id}-${kernel_id}-lto${lto_mode}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Restore ccache
         id: ccache-restore
@@ -291,10 +308,12 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ${{ steps.cache-keys.outputs.ccache_key }}
+          key: ${{ steps.cache-context.outputs.key }}
           restore-keys: |
-            ${{ steps.cache-keys.outputs.ccache_restore_1 }}
-            ${{ steps.cache-keys.outputs.ccache_restore_2 }}
+            ${{ steps.cache-context.outputs.manager_prefix }}-
+            ${{ steps.cache-context.outputs.source_prefix }}-
+            ${{ steps.cache-context.outputs.kernel_prefix }}-
+            ${{ steps.cache-context.outputs.base }}-
 
       - name: Restore ThinLTO cache
         id: thinlto-restore
@@ -302,10 +321,9 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /home/runner/.cache/thinlto
-          key: ${{ steps.cache-keys.outputs.thinlto_key }}
+          key: ${{ steps.cache-context.outputs.thinlto_key }}
           restore-keys: |
-            ${{ steps.cache-keys.outputs.thinlto_restore_1 }}
-            ${{ steps.cache-keys.outputs.thinlto_restore_2 }}
+            ${{ steps.cache-context.outputs.thinlto_prefix }}-
 
       - name: Apply manager
         run: bash scripts/patch-manager.sh
@@ -325,15 +343,45 @@ jobs:
       - name: Package AnyKernel3 zip
         run: bash scripts/package-anykernel.sh
 
-      - name: Write build-info
-        env:
-          CCACHE_KEY: ${{ steps.cache-keys.outputs.ccache_key }}
-          CCACHE_HIT: ${{ steps.ccache-restore.outputs.cache-hit || 'false' }}
-          THINLTO_KEY: ${{ steps.cache-keys.outputs.thinlto_key }}
-          THINLTO_HIT: ${{ steps.thinlto-restore.outputs.cache-hit || 'false' }}
-          CACHE_WRITER: ${{ inputs.cache_writer }}
-          DISK_AVAILABLE_GIB: ${{ steps.disk-space.outputs.available_gib }}
-        run: bash scripts/write-build-info-txt.sh
+      - name: Copy metadata into release
+        run: |
+          cp release/resolved-refs.env kernel-source/release/resolved-refs.env
+          {
+            echo "kernel_source=${KERNEL_SOURCE}"
+            echo "kernel_source_display=${KERNEL_SOURCE_DISPLAY:-}"
+            echo "kernel_source_author=${KERNEL_SOURCE_AUTHOR:-}"
+            echo "rom_family=${ROM_FAMILY:-}"
+            echo "rom_support=${ROM_SUPPORT:-}"
+            echo "supported_rom_label=${SUPPORTED_ROM_LABEL:-}"
+            echo "defconfig_mode=${DEFCONFIG_MODE:-}"
+            echo "defconfig=${DEFCONFIG:-}"
+            echo "base_defconfig=${BASE_DEFCONFIG:-}"
+            echo "config_fragments=${CONFIG_FRAGMENTS:-}"
+            echo "source_repo=${SOURCE_REPO}"
+            echo "source_ref=${SOURCE_REF}"
+            echo "source_commit=$(git -C kernel-source rev-parse HEAD)"
+            echo "workflow_run=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "runner_image_os=${ImageOS:-unknown}"
+            echo "runner_image_version=${ImageVersion:-unknown}"
+            echo "android_clang_version=${ACTIVE_TOOLCHAIN_VERSION}"
+            echo "android_clang_commit=${ACTIVE_TOOLCHAIN_COMMIT}"
+            echo "toolchain=${TOOLCHAIN}"
+            echo "toolchain_digest=${ACTIVE_TOOLCHAIN_DIGEST}"
+            echo "lto=${LTO:-thin}"
+            echo "package_family=${PACKAGE_FAMILY:-}"
+            echo "quality_channel=${QUALITY_CHANNEL:-experimental}"
+            if [[ "${KERNEL_SOURCE:-melt}" == "melt" ]]; then
+              echo "quality_label=melt-stable-candidate"
+            else
+              echo "quality_label=los-experimental"
+            fi
+            echo "ccache_key=${{ steps.cache-context.outputs.key }}"
+            echo "ccache_hit=${{ steps.ccache-restore.outputs.cache-hit || 'false' }}"
+            echo "thinlto_cache_key=${{ steps.cache-context.outputs.thinlto_key }}"
+            echo "thinlto_cache_hit=${{ steps.thinlto-restore.outputs.cache-hit || 'false' }}"
+            echo "disk_available_before_build_gib=${{ steps.disk-space.outputs.available_gib }}"
+            cat kernel-source/release/resolved-refs.env
+          } > kernel-source/release/build-info.txt
 
       - name: Write build-info JSON
         run: bash scripts/write-build-info-json.sh
@@ -374,37 +422,20 @@ jobs:
             kernel-source/release/ccache-stats.txt
             kernel-source/release/zip-name.env
 
-      # Text-only twin of the flash artifact. The aggregate job needs ~20 KB of
-      # metadata, not every multi-hundred-MB ZIP in the matrix.
-      - name: Upload metadata artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: marble-meta-${{ inputs.artifact_label }}-${{ inputs.build_scope }}-r${{ github.run_number }}
-          if-no-files-found: error
-          retention-days: 30
-          path: |
-            kernel-source/release/build-info.txt
-            kernel-source/release/build-info.json
-            kernel-source/release/summary.md
-            kernel-source/release/zip-audit.txt
-            kernel-source/release/ccache-stats.txt
-            kernel-source/release/zip-name.env
-
-      # Object caches save even when the build fails (e.g. OOM at 90% compile),
-      # so the next run reuses the partial work. Never on cancel. Actions cache
-      # keys are immutable, so skip when this run restored an exact hit, and only
-      # the elected writer uploads — otherwise parallel managers race for one key.
-      # Product artifacts (ZIP, release) stay success-only above.
+      # Object caches: save even when the build fails (e.g. 90% compile then OOM),
+      # so the next run can reuse partial work. Never save on cancel. Exact GHA
+      # keys are immutable — only save when this run did not restore an exact hit.
+      # Product artifacts (ZIP/release) stay success-only above.
       - name: Save ccache
-        if: ${{ always() && inputs.enable_ccache && inputs.cache_writer && !cancelled() && steps.ccache-restore.outputs.cache-hit != 'true' }}
+        if: ${{ always() && inputs.enable_ccache && !cancelled() && steps.ccache-restore.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ${{ steps.cache-keys.outputs.ccache_key }}
+          key: ${{ steps.cache-context.outputs.key }}
 
       - name: Save ThinLTO cache
-        if: ${{ always() && inputs.lto == 'thin' && inputs.cache_writer && !cancelled() && steps.thinlto-restore.outputs.cache-hit != 'true' }}
+        if: ${{ always() && inputs.lto == 'thin' && !cancelled() && steps.thinlto-restore.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /home/runner/.cache/thinlto
-          key: ${{ steps.cache-keys.outputs.thinlto_key }}
+          key: ${{ steps.cache-context.outputs.thinlto_key }}

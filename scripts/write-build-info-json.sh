@@ -57,11 +57,8 @@ data = {
     "cache": {
         "ccache_key": info.get("ccache_key", ""),
         "ccache_hit": info.get("ccache_hit", ""),
-        "ccache_hit_rate": info.get("ccache_hit_rate", ""),
-        "ccache_direct_rate": info.get("ccache_direct_rate", ""),
         "thinlto_cache_key": info.get("thinlto_cache_key", ""),
         "thinlto_cache_hit": info.get("thinlto_cache_hit", ""),
-        "writer": info.get("cache_writer", "") == "true",
     },
     "build": {
         "lto": info.get("lto", ""),
@@ -70,9 +67,6 @@ data = {
         "quality_channel": info.get("quality_channel", ""),
         "quality_label": info.get("quality_label", ""),
         "scope": info.get("build_scope", ""),
-        "started_utc": info.get("build_started_utc", ""),
-        "source_date_epoch": info.get("source_date_epoch", ""),
-        "kbuild_build_timestamp": info.get("kbuild_build_timestamp", ""),
     },
     "manager": {
         "name": info.get("manager", ""),
@@ -82,7 +76,6 @@ data = {
         "tag": info.get("manager_tag", ""),
         "version_code": info.get("manager_version_code", ""),
         "setup_path": info.get("manager_setup_path", ""),
-        "setup_sha256": info.get("manager_setup_sha256", ""),
         "build": {
             "version_code": info.get("manager_build_version_code", ""),
             "version_name": info.get("manager_build_version_name", ""),
@@ -104,7 +97,6 @@ data = {
     "artifact": {
         "zip_name": zip_info.get("zip_name", ""),
         "zip_sha256": zip_info.get("zip_sha256", ""),
-        "zip_size_bytes": zip_info.get("zip_size_bytes", ""),
     },
 }
 

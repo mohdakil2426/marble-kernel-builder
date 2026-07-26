@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Explicit caller env (CI step env, tests) must beat config/marble.env and the
-# generated release/*.env files, so snapshot it before anything is sourced.
-declare -A caller=()
-for _var in SUPPORTED_ROM_LABEL ROM_FAMILY KERNEL_SOURCE PACKAGE_FAMILY; do
-  [[ -v "${_var}" ]] && caller["${_var}"]="${!_var}"
-done
-unset _var
+# Preserve caller/preset labels before marble.env / release env files are applied.
+_caller_rom_label="${SUPPORTED_ROM_LABEL+x}"
+_caller_rom_family="${ROM_FAMILY+x}"
+_caller_kernel_source="${KERNEL_SOURCE+x}"
+_caller_package_family="${PACKAGE_FAMILY+x}"
+_preset_rom_label="${SUPPORTED_ROM_LABEL:-}"
+_preset_rom_family="${ROM_FAMILY:-}"
+_preset_kernel_source="${KERNEL_SOURCE:-}"
+_preset_package_family="${PACKAGE_FAMILY:-}"
 
 source config/marble.env
 
@@ -28,20 +30,29 @@ if [[ -f release/kernel-source.env ]]; then
   source release/kernel-source.env
 fi
 
-for _var in "${!caller[@]}"; do
-  printf -v "${_var}" '%s' "${caller[${_var}]}"
-done
-unset _var
-
-# A caller that overrode the source or ROM family must not inherit a stale
-# PACKAGE_FAMILY from release/kernel-source.env (e.g. a prior LOS resolve);
-# clear it so derive_package_family recomputes.
-if [[ ! -v caller[PACKAGE_FAMILY] ]] && { [[ -v caller[KERNEL_SOURCE] ]] || [[ -v caller[ROM_FAMILY] ]]; }; then
+# Explicit caller env always wins (tests + CI step env).
+if [[ -n "${_caller_rom_label}" ]]; then
+  SUPPORTED_ROM_LABEL="${_preset_rom_label}"
+else
+  SUPPORTED_ROM_LABEL="${SUPPORTED_ROM_LABEL:-HyperOS}"
+fi
+if [[ -n "${_caller_rom_family}" ]]; then
+  ROM_FAMILY="${_preset_rom_family}"
+fi
+if [[ -n "${_caller_kernel_source}" ]]; then
+  KERNEL_SOURCE="${_preset_kernel_source}"
+else
+  KERNEL_SOURCE="${KERNEL_SOURCE:-melt}"
+fi
+if [[ -n "${_caller_package_family}" ]]; then
+  PACKAGE_FAMILY="${_preset_package_family}"
+elif [[ -n "${_caller_kernel_source}" || -n "${_caller_rom_family}" ]]; then
+  # Caller overrode source/family — do not keep a stale PACKAGE_FAMILY from
+  # release/kernel-source.env (e.g. prior LOS resolve left PACKAGE_FAMILY=LOS).
   PACKAGE_FAMILY=""
 fi
-
-SUPPORTED_ROM_LABEL="${SUPPORTED_ROM_LABEL:-HyperOS}"
-KERNEL_SOURCE="${KERNEL_SOURCE:-melt}"
+unset _caller_rom_label _caller_rom_family _caller_kernel_source _caller_package_family
+unset _preset_rom_label _preset_rom_family _preset_kernel_source _preset_package_family
 
 derive_package_family() {
   local rom_family="${ROM_FAMILY:-}"
@@ -192,13 +203,9 @@ popd >/dev/null
 
 pushd "${release_dir}" >/dev/null
 sha256sum "${zip_name}" > "${zip_name}.sha256"
-{
-  printf 'zip_name=%s\n' "${zip_name}"
-  printf 'zip_sha256=%s\n' "$(cut -d' ' -f1 < "${zip_name}.sha256")"
-  # Recorded so the matrix summary can report size without the ZIP present.
-  printf 'zip_size_bytes=%s\n' "$(stat -c%s "${zip_name}")"
-  printf 'package_family=%s\n' "${PACKAGE_FAMILY}"
-} > zip-name.env
+printf 'zip_name=%s\n' "${zip_name}" > zip-name.env
+printf 'zip_sha256=%s\n' "$(sha256sum "${zip_name}" | awk '{print $1}')" >> zip-name.env
+printf 'package_family=%s\n' "${PACKAGE_FAMILY}" >> zip-name.env
 popd >/dev/null
 
 rm -rf "${work_dir}"

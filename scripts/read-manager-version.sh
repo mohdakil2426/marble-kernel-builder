@@ -114,26 +114,17 @@ if [[ -n "${git_dir_for_count}" ]]; then
     manager_version_method="wild-revlist"
     echo "Wild-style manager version: commits=${commits_count} base=${base_version} code=${manager_version_code} (git: ${git_dir_for_count})"
 
-    # Inject into the Makefile so the built manager reports the same code.
-    # DKSU_VERSION can appear mid-line (a -D compiler flag); the other two are
-    # line-anchored assignments, optionally exported.
-    injected=""
-    for symbol in DKSU_VERSION KSU_VERSION KERNELSU_VERSION; do
-      if [[ "${symbol}" == "DKSU_VERSION" ]]; then
-        find_re="DKSU_VERSION[[:space:]]*[?:]?=[[:space:]]*[0-9]+"
-        sed_re="s/(DKSU_VERSION[[:space:]]*[?:]?=[[:space:]]*)[0-9]+/\\1${manager_version_code}/"
-      else
-        find_re="^(export[[:space:]]+)?${symbol}[[:space:]]*[?:]?=[[:space:]]*[0-9]+"
-        sed_re="s/^(export[[:space:]]+)?(${symbol}[[:space:]]*[?:]?=[[:space:]]*)[0-9]+/\\1\\2${manager_version_code}/"
-      fi
-      if grep -qE "${find_re}" "${manager_makefile}" 2>/dev/null; then
-        sed -i -E "${sed_re}" "${manager_makefile}" || true
-        injected="${symbol}"
-        break
-      fi
-    done
-    if [[ -n "${injected}" ]]; then
-      echo "Injected ${injected}=${manager_version_code} into ${manager_makefile}"
+    # Inject into Makefile so the built manager reports the same code (Wild pattern).
+    # Common placeholders seen in KernelSU-family Makefiles.
+    if grep -qE 'DKSU_VERSION\s*[?:]?=' "${manager_makefile}" 2>/dev/null; then
+      sed -i -E "s/(DKSU_VERSION\\s*[?:]?=\\s*)[0-9]+/\\1${manager_version_code}/" "${manager_makefile}" || true
+      echo "Injected DKSU_VERSION=${manager_version_code} into ${manager_makefile}"
+    elif grep -qE '^(export[[:space:]]+)?KSU_VERSION\s*[?:]?=\s*[0-9]+' "${manager_makefile}" 2>/dev/null; then
+      sed -i -E "s/^(export[[:space:]]+)?(KSU_VERSION\\s*[?:]?=\\s*)[0-9]+/\\1\\2${manager_version_code}/" "${manager_makefile}" || true
+      echo "Injected KSU_VERSION=${manager_version_code} into ${manager_makefile}"
+    elif grep -qE '^(export[[:space:]]+)?KERNELSU_VERSION\s*[?:]?=\s*[0-9]+' "${manager_makefile}" 2>/dev/null; then
+      sed -i -E "s/^(export[[:space:]]+)?(KERNELSU_VERSION\\s*[?:]?=\\s*)[0-9]+/\\1\\2${manager_version_code}/" "${manager_makefile}" || true
+      echo "Injected KERNELSU_VERSION=${manager_version_code} into ${manager_makefile}"
     else
       echo "Note: no DKSU_VERSION/KSU_VERSION numeric assignment to inject; computed code still recorded for packaging"
     fi

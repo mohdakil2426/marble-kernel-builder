@@ -1,30 +1,33 @@
 #!/usr/bin/env bash
-# Resolve TOOLCHAIN=auto to the kernel preset's recommended_toolchain.
-#
-# build-core.yml runs resolve-kernel-source.sh in the previous step, so this
-# reuses release/kernel-source.env and only re-resolves when that file is
-# missing or describes a different preset than the caller asked for. Resolving
-# twice used to duplicate every line this appends to GITHUB_ENV.
 set -euo pipefail
 
-env_file="release/kernel-source.env"
-cached_source=""
-if [[ -f "${env_file}" ]]; then
-  # shellcheck disable=SC1090
-  cached_source="$(source "${env_file}" >/dev/null 2>&1; printf '%s' "${KERNEL_SOURCE:-}")"
+# Resolve TOOLCHAIN=auto from kernel preset recommended_toolchain.
+# Prefer an explicit KERNEL_SOURCE over any stale release/kernel-source.env.
+
+if [[ -n "${KERNEL_SOURCE:-}" ]]; then
+  SOURCE_REF="${SOURCE_REF:-}"
+  bash scripts/resolve-kernel-source.sh >/dev/null
+elif [[ -f release/kernel-source.env ]]; then
+  # shellcheck disable=SC1091
+  source release/kernel-source.env
+else
+  KERNEL_SOURCE=melt
+  SOURCE_REF="${SOURCE_REF:-}"
+  bash scripts/resolve-kernel-source.sh >/dev/null
 fi
 
-if [[ -z "${cached_source}" ]] || { [[ -n "${KERNEL_SOURCE:-}" ]] && [[ "${cached_source}" != "${KERNEL_SOURCE}" ]]; }; then
-  KERNEL_SOURCE="${KERNEL_SOURCE:-melt}" SOURCE_REF="${SOURCE_REF:-}" \
-    bash scripts/resolve-kernel-source.sh >/dev/null
+if [[ -f release/kernel-source.env ]]; then
+  # shellcheck disable=SC1091
+  source release/kernel-source.env
 fi
-
-# shellcheck disable=SC1090
-source "${env_file}"
 
 TOOLCHAIN="${TOOLCHAIN:-auto}"
 if [[ "${TOOLCHAIN}" == "auto" || -z "${TOOLCHAIN}" ]]; then
-  TOOLCHAIN="${RECOMMENDED_TOOLCHAIN:-android-r416183b}"
+  if [[ -n "${RECOMMENDED_TOOLCHAIN:-}" ]]; then
+    TOOLCHAIN="${RECOMMENDED_TOOLCHAIN}"
+  else
+    TOOLCHAIN="android-r416183b"
+  fi
 fi
 
 case "${TOOLCHAIN}" in

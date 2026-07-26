@@ -18,9 +18,7 @@ if [[ ! -d "${KERNEL_DIR}" ]]; then
   exit 1
 fi
 
-# Captured rather than eval'd inline so a Python failure is not silently
-# treated as "no patches configured".
-if ! patch_plan="$(
+eval "$(
   KERNEL_SOURCE="${KERNEL_SOURCE}" SOURCE_REF="${SOURCE_REF}" python3 - "${CONFIG_JSON}" <<'PY'
 import json
 import os
@@ -63,17 +61,7 @@ print("APPLY=1")
 print(f"PATCH_DIR={shlex.quote(patch_dir)}")
 print(f"SOURCE_REF={shlex.quote(source_ref)}")
 PY
-)"; then
-  echo "::error::Failed to read source_patches for '${KERNEL_SOURCE}' from ${CONFIG_JSON}"
-  exit 1
-fi
-
-if [[ -z "${patch_plan}" ]]; then
-  echo "::error::Source patch resolver produced no output (is python3 available?)"
-  exit 1
-fi
-
-eval "${patch_plan}"
+)"
 
 if [[ "${APPLY:-0}" != "1" ]]; then
   case "${REASON:-}" in

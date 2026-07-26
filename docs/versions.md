@@ -68,50 +68,8 @@ Notes:
 
 - **Melt / HyperOS** keeps LTO enabled (default `thin`) with Android `clang-r416183b`.
 - **LOS-family** presets (`lineageos`, `evolution-x`, `aosp-pablo`, `pa-gr`) should use `toolchain=llvm-22.1.8` and `lto=thin` on free runners; the workflow enables swap and caps parallelism to reduce OOM risk. `lto=full` is experimental on free runners (OOM risk).
-
-## Cache budget
-
-GitHub allows **10 GB of Actions cache per repository**, LRU-evicted, with a 7-day idle
-expiry. Everything below is sized to fit inside that. Full rationale:
-`docs/ARCHITECTURE.md` section 11.
-
-| Cache | Cap | Key |
-|---|---|---|
-| Android clang | ~1.5 GB | `marble-builder-clang-v3-...` (stable) |
-| LLVM 22.1.8 | ~1.8 GB | `marble-builder-llvm-v1-...` (stable) |
-| ccache | **2 GiB** | `marble-ccache-v5-{os}-{arch}-{toolchain}-lto{mode}-{source}-{code_hash}-w{isoweek}` |
-| ThinLTO | **1 GiB** | `marble-thinlto-v5-...` (same shape) |
-
-- One bucket per **(toolchain, LTO mode, kernel source)**, rotated weekly. Managers share a
-  bucket, because their object sets differ by a rounding error against the kernel tree.
-- **No commit SHAs in the key.** The old v4 key embedded source, manager, and SUSFS commits,
-  so the primary key missed on every run and each run uploaded a fresh multi-GiB entry.
-- The restore chain drops the week first, then the code hash. There is no bucket-wide
-  fallback: another source's cache is a multi-GB download for near-zero hits.
-- `code_hash` covers only `scripts/build-kernel.sh` and `config/marble.env`, so adding a
-  kernel preset does not invalidate every cache in the repository.
-- ccache: `compiler_check=content`, `compression_level=1`, `hash_dir=false`,
-  `inode_cache=true`, and
-  `sloppiness=include_file_mtime,include_file_ctime,time_macros,locale,system_headers`
-  so a freshly cloned tree still gets direct-mode hits.
-- ThinLTO runs with `--thinlto-cache-policy=cache_size_bytes=1g:prune_after=168h`. LLVM's
-  default is 75% of free disk, which would evict every other cache in the repository.
-- **One writer per matrix run.** Actions cache keys are immutable, so exactly one job is
-  elected `cache_writer` and the rest skip the save.
-- **Save on failure too:** `always() && !cancelled() && cache_writer && exact miss`. A build
-  that dies at 90% still warms the next run. ZIP and release stay success-only.
-- **Summary Cache section:** hit flags plus hit-rate percentages, with the raw `ccache -s`
-  text in the per-build summary and `ccache-stats.txt`. **Stripped** from GitHub Release
-  notes (`matrix-summary-release.md`).
-- Disk: hosted SDKs are relocated (a same-filesystem rename, so it returns at once) and
-  purged in the background, so the delete overlaps the compile instead of blocking it.
-
-Self-hosted overrides: `MARBLE_CCACHE_SIZE`, `MARBLE_CCACHE_COMPRESS_LEVEL`,
-`MARBLE_CCACHE_SLOPPINESS`, `THINLTO_CACHE_MAX`, `THINLTO_CACHE_PRUNE_AFTER`.
-
-## Reproducible builds
-
-`SOURCE_DATE_EPOCH` and `KBUILD_BUILD_TIMESTAMP` come from the **kernel source commit date**,
-so identical inputs produce a byte-identical `Image`. `uname -a` therefore shows the source
-commit date rather than the CI run date; the real build time is recorded in `build-info`,
-the summary, and the AnyKernel banner.
+- Ccache: **4 GiB** (Android clang) / **6 GiB** (LLVM 22), content-based compiler checks, multi-level restore-keys (toolchain+LTO → kernel → source → manager).
+- ThinLTO: separate Actions cache for `~/.cache/thinlto` when `lto=thin` (similar to WildKernels LTO cache bucket).
+- **Object-cache save:** ccache / ThinLTO save on **failure as well as success** (`always() && !cancelled() && exact miss`). Partial compiles (e.g. fail at 90%) still warm the next run. ZIP/release stay success-only.
+- **Summary Cache section:** CI/artifact summaries embed Actions hit flags + full `ccache -s` text (same as `ccache-stats.txt`). **Stripped** from GitHub Release notes (`matrix-summary-release.md`).
+- Disk: Wild-style SDK cleanup on kernel jobs (especially when LTO is enabled or free space is low).
