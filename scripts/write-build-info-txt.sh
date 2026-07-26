@@ -6,7 +6,32 @@
 # release/resolved-refs.env are appended verbatim.
 set -euo pipefail
 
+# Resolved source metadata from the CI environment must beat the stock defaults
+# in config/marble.env. Keep the same precedence when this script is invoked
+# directly with release/kernel-source.env present.
+declare -A caller=()
+for _var in \
+  KERNEL_SOURCE KERNEL_SOURCE_DISPLAY KERNEL_SOURCE_AUTHOR \
+  SOURCE_REPO SOURCE_REF SUPPORTED_ROM_LABEL ROM_FAMILY ROM_SUPPORT \
+  DEFCONFIG_MODE DEFCONFIG BASE_DEFCONFIG CONFIG_FRAGMENTS \
+  RECOMMENDED_TOOLCHAIN PACKAGE_FAMILY
+do
+  [[ -v "${_var}" ]] && caller["${_var}"]="${!_var}"
+done
+unset _var
+
 source config/marble.env
+
+KERNEL_SOURCE_ENV="${KERNEL_SOURCE_ENV:-release/kernel-source.env}"
+if [[ -f "${KERNEL_SOURCE_ENV}" ]]; then
+  # shellcheck disable=SC1090
+  source "${KERNEL_SOURCE_ENV}"
+fi
+
+for _var in "${!caller[@]}"; do
+  printf -v "${_var}" '%s' "${caller[${_var}]}"
+done
+unset _var
 
 KERNEL_DIR="${KERNEL_DIR:-kernel-source}"
 RESOLVED_REFS_FILE="${RESOLVED_REFS_FILE:-release/resolved-refs.env}"

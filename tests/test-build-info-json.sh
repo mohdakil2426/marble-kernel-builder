@@ -47,9 +47,13 @@ if ! ( set -euo pipefail; source "${refs_file}" ) >/dev/null 2>&1; then
 fi
 
 KERNEL_DIR="${tmp_dir}" RESOLVED_REFS_FILE="${refs_file}" \
-  KERNEL_SOURCE=melt KERNEL_SOURCE_AUTHOR=Melt \
-  SOURCE_REPO=mohdakil2426/android_kernel_xiaomi_marble SOURCE_REF=melt-rebase \
-  BUILD_SCOPE=image-only LTO=thin TOOLCHAIN=android-r416183b PACKAGE_FAMILY=MELT \
+  KERNEL_SOURCE=evolution-x KERNEL_SOURCE_DISPLAY=Evolution-X \
+  KERNEL_SOURCE_AUTHOR=Evolution-X SUPPORTED_ROM_LABEL=Evolution-X \
+  ROM_FAMILY=los ROM_SUPPORT='Evolution X and LOS-based custom ROMs only' \
+  DEFCONFIG_MODE=gki_fragments DEFCONFIG= BASE_DEFCONFIG=gki_defconfig \
+  CONFIG_FRAGMENTS='vendor/waipio_GKI.config vendor/xiaomi_GKI.config vendor/marble_GKI.config vendor/debugfs.config' \
+  SOURCE_REPO=Evolution-X-Devices/kernel_xiaomi_sm8450 SOURCE_REF=cnb \
+  BUILD_SCOPE=image-only LTO=thin TOOLCHAIN=llvm-22.1.8 PACKAGE_FAMILY=LOS \
   CCACHE_KEY=marble-ccache-v5-test CCACHE_HIT=true \
   THINLTO_KEY=marble-thinlto-v5-test THINLTO_HIT=true CACHE_WRITER=true \
   BUILD_STARTED_UTC='2026-07-26 09:14:02 UTC' \
@@ -60,9 +64,25 @@ build_info="${release_dir}/build-info.txt"
   echo "FAIL: build-info.txt was not created" >&2
   exit 1
 }
+grep -Fxq 'supported_rom_label=Evolution-X' "${build_info}" || {
+  echo "FAIL: build-info.txt replaced the resolved Evolution-X ROM label" >&2
+  exit 1
+}
+grep -Fxq 'rom_family=los' "${build_info}" || {
+  echo "FAIL: build-info.txt lost the resolved LOS ROM family" >&2
+  exit 1
+}
+grep -Fxq 'defconfig=' "${build_info}" || {
+  echo "FAIL: build-info.txt replaced the resolved fragment config with the stock defconfig" >&2
+  exit 1
+}
+grep -Fxq 'base_defconfig=gki_defconfig' "${build_info}" || {
+  echo "FAIL: build-info.txt lost the resolved LOS base defconfig" >&2
+  exit 1
+}
 
 cat > "${release_dir}/zip-name.env" <<'ENV'
-zip_name=AK3_marble_MELT_melt_resukisu-v4.1.0-code34990_susfs-v2.2.0_r7.zip
+zip_name=AK3_marble_LOS_evolution-x_resukisu-v4.1.0-code34990_susfs-v2.2.0_r7.zip
 zip_sha256=abc123
 zip_size_bytes=31457280
 ENV
@@ -82,8 +102,8 @@ import sys
 with open(sys.argv[1], encoding="utf-8") as fh:
     data = json.load(fh)
 
-assert data["source"]["repo"] == "mohdakil2426/android_kernel_xiaomi_marble"
-assert data["source"]["ref"] == "melt-rebase"
+assert data["source"]["repo"] == "Evolution-X-Devices/kernel_xiaomi_sm8450"
+assert data["source"]["ref"] == "cnb"
 
 assert data["manager"]["name"] == "resukisu"
 assert data["manager"]["build"]["version_code"] == "34990"
@@ -101,13 +121,14 @@ assert data["manager"]["setup_sha256"].startswith("9f2c1b7d")
 assert data["susfs"]["enabled"] is True
 assert data["susfs"]["reported_version"] == "v2.2.0"
 
-assert data["artifact"]["zip_name"].startswith("AK3_marble_MELT_melt_resukisu")
+assert data["artifact"]["zip_name"].startswith("AK3_marble_LOS_evolution-x_resukisu")
 assert data["artifact"]["zip_sha256"] == "abc123"
 assert data["artifact"]["zip_size_bytes"] == "31457280"
 
 assert data["build"]["scope"] == "image-only"
 assert data["build"]["lto"] == "thin"
-assert data["build"]["toolchain"] == "android-r416183b"
+assert data["build"]["toolchain"] == "llvm-22.1.8"
+assert data["build"]["package_family"] == "LOS"
 assert data["build"]["started_utc"] == "2026-07-26 09:14:02 UTC"
 # Reproducibility: the kernel timestamp is derived from the source commit epoch
 # and is distinct from the CI clock above.
