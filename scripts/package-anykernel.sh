@@ -19,6 +19,7 @@ fi
 KERNEL_SOURCE="${_caller_source:-${KERNEL_SOURCE:-melt}}"
 ROM_FAMILY="${_caller_rom:-${ROM_FAMILY:-}}"
 KERNEL_DIR="${KERNEL_DIR:-kernel-source}"
+release_dir="${KERNEL_DIR}/${RELEASE_DIR}"
 MANAGER="${MANAGER:-none}"
 ENABLE_SUSFS="${ENABLE_SUSFS:-false}"
 BUILD_SCOPE="${BUILD_SCOPE:-image-only}"
