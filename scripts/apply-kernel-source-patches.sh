@@ -18,62 +18,32 @@ if [[ ! -d "${KERNEL_DIR}" ]]; then
   exit 1
 fi
 
-eval "$(
-  KERNEL_SOURCE="${KERNEL_SOURCE}" SOURCE_REF="${SOURCE_REF}" python3 - "${CONFIG_JSON}" <<'PY'
-import json
-import os
-import shlex
-import sys
-
-config_path = sys.argv[1]
-kernel_source = os.environ.get("KERNEL_SOURCE", "melt")
-source_ref = os.environ.get("SOURCE_REF", "")
-
-with open(config_path, encoding="utf-8") as fh:
-    presets = json.load(fh)
-
-if kernel_source not in presets:
-    print("APPLY=0")
-    print("REASON=unknown_preset")
-    sys.exit(0)
-
-preset = presets[kernel_source]
-sp = preset.get("source_patches") or {}
-enabled = bool(sp.get("enabled"))
-patch_dir = (sp.get("dir") or "").strip()
-match_refs = sp.get("match_refs") or []
-if isinstance(match_refs, str):
-    match_refs = [match_refs]
-
-if not enabled or not patch_dir:
-    print("APPLY=0")
-    print("REASON=disabled_or_empty")
-    sys.exit(0)
-
-if match_refs and source_ref not in match_refs:
-    print("APPLY=0")
-    print("REASON=ref_mismatch")
-    print(f"MATCH_REFS={shlex.quote(' '.join(match_refs))}")
-    print(f"SOURCE_REF={shlex.quote(source_ref)}")
-    sys.exit(0)
-
-print("APPLY=1")
-print(f"PATCH_DIR={shlex.quote(patch_dir)}")
-print(f"SOURCE_REF={shlex.quote(source_ref)}")
-PY
-)"
-
-if [[ "${APPLY:-0}" != "1" ]]; then
-  case "${REASON:-}" in
-    ref_mismatch)
-      echo "Skipping source patches for ${KERNEL_SOURCE}: SOURCE_REF='${SOURCE_REF}' not in match_refs (${MATCH_REFS:-})"
-      echo "::notice::No source-local patches applied (ref gate)."
-      ;;
-    *)
-      echo "No source-local patches configured for ${KERNEL_SOURCE} (noop)."
-      ;;
-  esac
+sp_enabled="$(jq -r --arg s "${KERNEL_SOURCE}" '.[$s].source_patches.enabled // false' "${CONFIG_JSON}")"
+if [[ "${sp_enabled}" != "true" ]]; then
+  echo "No source-local patches configured for ${KERNEL_SOURCE} (noop)."
   exit 0
+fi
+
+PATCH_DIR="$(jq -r --arg s "${KERNEL_SOURCE}" '.[$s].source_patches.dir // empty' "${CONFIG_JSON}")"
+if [[ -z "${PATCH_DIR}" ]]; then
+  echo "No source-local patches configured for ${KERNEL_SOURCE} (noop)."
+  exit 0
+fi
+
+match_refs="$(jq -r --arg s "${KERNEL_SOURCE}" '.[$s].source_patches.match_refs // [] | if type=="array" then join(" ") else . end' "${CONFIG_JSON}")"
+if [[ -n "${match_refs}" ]]; then
+  matched=0
+  for ref in ${match_refs}; do
+    if [[ "${SOURCE_REF}" == "${ref}" ]]; then
+      matched=1
+      break
+    fi
+  done
+  if [[ "${matched}" -ne 1 ]]; then
+    echo "Skipping source patches for ${KERNEL_SOURCE}: SOURCE_REF='${SOURCE_REF}' not in match_refs (${match_refs})"
+    echo "::notice::No source-local patches applied (ref gate)."
+    exit 0
+  fi
 fi
 
 if [[ ! -d "${PATCH_DIR}" ]]; then

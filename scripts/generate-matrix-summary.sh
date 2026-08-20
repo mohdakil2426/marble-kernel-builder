@@ -36,11 +36,7 @@ if [[ "${#artifact_dirs[@]}" -eq 0 ]]; then
   exit 1
 fi
 
-get_info() {
-  local file="$1"
-  local key="$2"
-  summary_get_info "${file}" "${key}"
-}
+get_info() { summary_get_info "$1" "$2"; }
 
 manager_version_label() {
   local build_info="$1"

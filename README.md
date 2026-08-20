@@ -192,12 +192,12 @@ Only **official upstream** manager repositories are allowlisted at CI time. Rand
 
 Kernel branch `gki-android12-5.10`, from [`simonpunk/susfs4ksu`](https://gitlab.com/simonpunk/susfs4ksu):
 
-| Preset | Commit | Provenance |
+| Preset | Target | Description |
 |---|---|---|
-| `v2.2.0` *(default)* | `4003ecf2d01c6d13fa8edf6c4f2607365738dc3d` | Marble CI-proven, 2026-06-22 |
-| `v2.1.0` | `86114db0c49f20fa7857b8b559f3ab87cbc2d00d` | WildKernels GKI r4 pin |
-
-Or set `susfs_version=custom` with your own `susfs_ref`.
+| `latest` *(default)* | `gki-android12-5.10` branch HEAD | Dynamically tracks newest upstream commits and version from `susfs.h` |
+| `v2.2.0` | `4003ecf2d01c6d13fa8edf6c4f2607365738dc3d` | Pinned stable commit (Marble CI-proven) |
+| `v2.1.0` | `86114db0c49f20fa7857b8b559f3ab87cbc2d00d` | Legacy pinned commit (WildKernels GKI r4 pin) |
+| `custom` | User `susfs_ref` input | Custom branch, tag, or commit SHA |
 
 The kernel side is only half of SUSFS — after flashing, also install the matching **[userspace module](https://github.com/sidex15/susfs4ksu-module/releases)** and configure your hiding rules. The final config is verified to contain `CONFIG_KSU=y` and `CONFIG_KSU_SUSFS=y`.
 
@@ -264,7 +264,7 @@ flowchart LR
 | `build_sukisu_ultra` | `false` | SukiSU Ultra |
 | `build_resukisu` | `false` | ReSukiSU |
 | `enable_susfs` | `false` | Applies to KSU-Next, SukiSU Ultra, ReSukiSU |
-| `susfs_version` | `v2.2.0` | `v2.2.0` · `v2.1.0` · `custom` |
+| `susfs_version` | `latest` | `latest` · `v2.2.0` · `v2.1.0` · `custom` |
 | `susfs_ref` | *(empty)* | Branch/tag/commit — only with `custom` |
 | `toolchain` | **`auto`** | `auto` picks the preset's recommendation · or force `android-r416183b` / `llvm-22.1.8` |
 | `lto` | `thin` | `none` · `thin` · `full` |
@@ -408,7 +408,7 @@ Every moving input is pinned and recorded. Full table: [`docs/versions.md`](docs
 | **SukiSU Ultra** | `@main` · SUSFS `@builtin` |
 | **ReSukiSU** | `ReSukiSU@main` |
 
-Refresh `config/known-good-pins.json` every **2–4 weeks**, or immediately after upstream breaks CI.
+Review `config/susfs-refs.json` and `config/managers.json` every **2–4 weeks**, or immediately after upstream breaks CI.
 
 <details>
 <summary><b>CI reliability practices</b></summary>

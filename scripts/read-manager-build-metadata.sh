@@ -9,64 +9,67 @@ RESOLVED_REFS_FILE="${RESOLVED_REFS_FILE:-release/resolved-refs.env}"
 release_dir="${KERNEL_DIR}/${RELEASE_DIR}"
 build_log="${release_dir}/build.log"
 
-manager_build_version_code=""
-manager_build_version_name=""
-manager_build_tag=""
-manager_signature_size=""
-manager_signature_hash=""
-manager_supported_line=""
-
 mkdir -p "$(dirname "${RESOLVED_REFS_FILE}")"
 
 if [[ ! -f "${build_log}" ]]; then
   echo "::warning::Build log not found at ${build_log}; manager build metadata will be empty"
-else
-  manager_build_version_code="$(
-    sed -nE \
-      -e 's/.*-- (KernelSU|KernelSU-Next) version:[[:space:]]*([0-9]+).*/\2/p' \
-      -e 's/.*-- SukiSU-Ultra version:[[:space:]]*([0-9]+)[[:space:]]+\[[^]]+\].*/\1/p' \
-      -e 's/.*-- ReSukiSU version code:[[:space:]]*([0-9]+).*/\1/p' \
-      "${build_log}" | head -n1 | tr -d '\r' || true
-  )"
-
-  manager_build_version_name="$(
-    sed -nE \
-      -e 's/.*-- SukiSU-Ultra version:[[:space:]]*[0-9]+[[:space:]]+\[([^]]+)\].*/\1/p' \
-      -e 's/.*-- ReSukiSU version name:[[:space:]]*(.+)$/\1/p' \
-      "${build_log}" | head -n1 | tr -d '\r' || true
-  )"
-
-  manager_build_tag="$(
-    sed -nE 's/.*-- KernelSU-Next tag:[[:space:]]*(.+)$/\1/p' \
-      "${build_log}" | head -n1 | tr -d '\r' || true
-  )"
-
-  manager_signature_size="$(
-    sed -nE 's/.*-- (KernelSU|KernelSU-Next) Manager signature size:[[:space:]]*([^[:space:]]+).*/\2/p' \
-      "${build_log}" | head -n1 | tr -d '\r' || true
-  )"
-
-  manager_signature_hash="$(
-    sed -nE 's/.*-- (KernelSU|KernelSU-Next) Manager signature hash:[[:space:]]*([0-9a-fA-F]+).*/\2/p' \
-      "${build_log}" | head -n1 | tr -d '\r' || true
-  )"
-
-  manager_supported_line="$(
-    sed -nE 's/.*-- Supported Unofficial Manager:[[:space:]]*(.+)$/\1/p' \
-      "${build_log}" | head -n1 | tr -d '\r' || true
-  )"
-  manager_supported_line="${manager_supported_line//, /,}"
+  {
+    echo "manager_build_version_code="
+    echo "manager_build_version_name="
+    echo "manager_build_tag="
+    echo "manager_signature_size="
+    echo "manager_signature_hash="
+    echo "manager_supported_line="
+  } >> "${RESOLVED_REFS_FILE}"
+  exit 0
 fi
 
-{
-  echo "manager_build_version_code=${manager_build_version_code}"
-  echo "manager_build_version_name=${manager_build_version_name}"
-  echo "manager_build_tag=${manager_build_tag}"
-  echo "manager_signature_size=${manager_signature_size}"
-  echo "manager_signature_hash=${manager_signature_hash}"
-  echo "manager_supported_line=${manager_supported_line}"
-} >> "${RESOLVED_REFS_FILE}"
+awk '
+  /-- (KernelSU|KernelSU-Next) version:[[:space:]]*[0-9]+/ && !code {
+    match($0, /-- (KernelSU|KernelSU-Next) version:[[:space:]]*([0-9]+)/, m)
+    code = m[2]
+  }
+  /-- SukiSU-Ultra version:[[:space:]]*[0-9]+/ && !code {
+    match($0, /-- SukiSU-Ultra version:[[:space:]]*([0-9]+)[[:space:]]+\[([^]]+)\]/, m)
+    code = m[1]
+    if (!name) name = m[2]
+  }
+  /-- ReSukiSU version code:[[:space:]]*[0-9]+/ && !code {
+    match($0, /-- ReSukiSU version code:[[:space:]]*([0-9]+)/, m)
+    code = m[1]
+  }
+  /-- ReSukiSU version name:[[:space:]]*.+/ && !name {
+    match($0, /-- ReSukiSU version name:[[:space:]]*(.+)/, m)
+    name = m[1]
+  }
+  /-- KernelSU-Next tag:[[:space:]]*.+/ && !tag {
+    match($0, /-- KernelSU-Next tag:[[:space:]]*(.+)/, m)
+    tag = m[1]
+  }
+  /-- (KernelSU|KernelSU-Next) Manager signature size:[[:space:]]*[^[:space:]]+/ && !sig_sz {
+    match($0, /-- (KernelSU|KernelSU-Next) Manager signature size:[[:space:]]*([^[:space:]]+)/, m)
+    sig_sz = m[2]
+  }
+  /-- (KernelSU|KernelSU-Next) Manager signature hash:[[:space:]]*[0-9a-fA-F]+/ && !sig_h {
+    match($0, /-- (KernelSU|KernelSU-Next) Manager signature hash:[[:space:]]*([0-9a-fA-F]+)/, m)
+    sig_h = m[2]
+  }
+  /-- Supported Unofficial Manager:[[:space:]]*.+/ && !supp {
+    match($0, /-- Supported Unofficial Manager:[[:space:]]*(.+)/, m)
+    supp = m[1]
+    gsub(/, /, ",", supp)
+  }
+  END {
+    print "manager_build_version_code=" code
+    print "manager_build_version_name=" name
+    print "manager_build_tag=" tag
+    print "manager_signature_size=" sig_sz
+    print "manager_signature_hash=" sig_h
+    print "manager_supported_line=" supp
+  }
+' "${build_log}" >> "${RESOLVED_REFS_FILE}"
 
+source "${RESOLVED_REFS_FILE}"
 if [[ -n "${manager_build_version_code}${manager_build_version_name}${manager_build_tag}" ]]; then
   echo "Manager build metadata: code=${manager_build_version_code:-unknown} name=${manager_build_version_name:-${manager_build_tag:-unknown}}"
 else

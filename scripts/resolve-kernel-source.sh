@@ -100,57 +100,27 @@ values = {
     "RECOMMENDED_TOOLCHAIN": recommended_toolchain,
     "PACKAGE_FAMILY": package_family,
 }
+os.makedirs("release", exist_ok=True)
+with open("release/kernel-source.env", "w", encoding="utf-8") as fh:
+    for k, v in values.items():
+        fh.write(f"{k}={shlex.quote(v)}\n")
+
+gh_env = os.environ.get("GITHUB_ENV")
+if gh_env and os.path.exists(gh_env):
+    with open(gh_env, "a", encoding="utf-8") as fh:
+        for k, v in values.items():
+            fh.write(f"{k}={v}\n")
+
+gh_out = os.environ.get("GITHUB_OUTPUT")
+if gh_out and os.path.exists(gh_out):
+    with open(gh_out, "a", encoding="utf-8") as fh:
+        for k in ("source_repo", "source_ref", "kernel_source", "kernel_source_display"):
+            fh.write(f"{k}={values.get(k.upper(), '')}\n")
+
 for key, value in values.items():
     print(f"{key}={shlex.quote(value)}")
 PY
 )"
-
-mkdir -p release
-{
-  # Shell-quote so `source release/kernel-source.env` is safe for values with spaces.
-  echo "KERNEL_SOURCE=$(printf '%q' "${KERNEL_SOURCE}")"
-  echo "KERNEL_SOURCE_DISPLAY=$(printf '%q' "${KERNEL_SOURCE_DISPLAY}")"
-  echo "KERNEL_SOURCE_AUTHOR=$(printf '%q' "${KERNEL_SOURCE_AUTHOR}")"
-  echo "SOURCE_REPO=$(printf '%q' "${SOURCE_REPO}")"
-  echo "SOURCE_REF=$(printf '%q' "${SOURCE_REF}")"
-  echo "SUPPORTED_ROM_LABEL=$(printf '%q' "${SUPPORTED_ROM_LABEL}")"
-  echo "ROM_FAMILY=$(printf '%q' "${ROM_FAMILY}")"
-  echo "ROM_SUPPORT=$(printf '%q' "${ROM_SUPPORT}")"
-  echo "DEFCONFIG_MODE=$(printf '%q' "${DEFCONFIG_MODE}")"
-  echo "DEFCONFIG=$(printf '%q' "${DEFCONFIG}")"
-  echo "BASE_DEFCONFIG=$(printf '%q' "${BASE_DEFCONFIG}")"
-  echo "CONFIG_FRAGMENTS=$(printf '%q' "${CONFIG_FRAGMENTS}")"
-  echo "RECOMMENDED_TOOLCHAIN=$(printf '%q' "${RECOMMENDED_TOOLCHAIN}")"
-  echo "PACKAGE_FAMILY=$(printf '%q' "${PACKAGE_FAMILY}")"
-} > release/kernel-source.env
-
-if [[ -n "${GITHUB_ENV:-}" ]]; then
-  {
-    echo "KERNEL_SOURCE=${KERNEL_SOURCE}"
-    echo "KERNEL_SOURCE_DISPLAY=${KERNEL_SOURCE_DISPLAY}"
-    echo "KERNEL_SOURCE_AUTHOR=${KERNEL_SOURCE_AUTHOR}"
-    echo "SOURCE_REPO=${SOURCE_REPO}"
-    echo "SOURCE_REF=${SOURCE_REF}"
-    echo "SUPPORTED_ROM_LABEL=${SUPPORTED_ROM_LABEL}"
-    echo "ROM_FAMILY=${ROM_FAMILY}"
-    echo "ROM_SUPPORT=${ROM_SUPPORT}"
-    echo "DEFCONFIG_MODE=${DEFCONFIG_MODE}"
-    echo "DEFCONFIG=${DEFCONFIG}"
-    echo "BASE_DEFCONFIG=${BASE_DEFCONFIG}"
-    echo "CONFIG_FRAGMENTS=${CONFIG_FRAGMENTS}"
-    echo "RECOMMENDED_TOOLCHAIN=${RECOMMENDED_TOOLCHAIN}"
-    echo "PACKAGE_FAMILY=${PACKAGE_FAMILY}"
-  } >> "${GITHUB_ENV}"
-fi
-
-if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-  {
-    echo "source_repo=${SOURCE_REPO}"
-    echo "source_ref=${SOURCE_REF}"
-    echo "kernel_source=${KERNEL_SOURCE}"
-    echo "kernel_source_display=${KERNEL_SOURCE_DISPLAY}"
-  } >> "${GITHUB_OUTPUT}"
-fi
 
 echo "Resolved kernel source preset '${KERNEL_SOURCE}' (${KERNEL_SOURCE_AUTHOR})"
 echo "  repo=${SOURCE_REPO}"

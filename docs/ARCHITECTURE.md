@@ -278,7 +278,7 @@ Parallel matrix builds of different managers share the group key only when those
 |-------|------|---------|-------|
 | `build_none` … `build_resukisu` | boolean | false | At least one required |
 | `enable_susfs` | boolean | false | Applies to KSUNext / SukiSU / ReSukiSU only |
-| `susfs_version` | choice | `v2.2.0` | `v2.2.0` · `v2.1.0` · `custom` |
+| `susfs_version` | choice | `latest` | `latest` · `v2.2.0` · `v2.1.0` · `custom` |
 | `susfs_ref` | string | empty | Only for custom SUSFS |
 | `kernel_source` | choice | `melt` | `melt` · `lineageos` · `evolution-x` · `aosp-pablo` · `pa-gr` |
 | `source_ref` | string | empty | Override preset branch/tag/commit |

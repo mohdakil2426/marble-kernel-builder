@@ -22,7 +22,7 @@ Last updated: **2026-07-13** (branch `feature/pa-gr-kernel-source` — pa-gr SM8
 | SukiSU Ultra + SUSFS | `SukiSU-Ultra/SukiSU-Ultra` | `builtin` | Official branch with manager-side SUSFS support |
 | ReSukiSU | `ReSukiSU/ReSukiSU` | `main` | Official branch with manager-side SUSFS support |
 
-The workflow resolves branch, tag, and commit inputs to exact commits at run time and records them in `release/build-info.txt`. For SUSFS, the user chooses `susfs_version=v2.2.0`, `susfs_version=v2.1.0`, or `susfs_version=custom`. Custom mode uses `susfs_ref` and verifies `susfs_expected_version` when provided.
+The workflow resolves branch, tag, and commit inputs to exact commits at run time and records them in `release/build-info.txt`. For SUSFS, the user chooses `susfs_version=latest` (default, tracks upstream branch HEAD), `susfs_version=v2.2.0` (pinned stable), `susfs_version=v2.1.0` (legacy pin), or `susfs_version=custom`. Custom mode uses `susfs_ref` and verifies `susfs_expected_version` when provided.
 
 Device targets remain Poco F5 (`marblein`) and Redmi Note 12 Turbo (`marble`). ROM support depends on the selected kernel preset: `melt` is stock HyperOS; `lineageos`, `evolution-x`, `aosp-pablo`, and `pa-gr` are for LOS-based custom ROMs only.
 
@@ -38,7 +38,7 @@ AK3_marble_<FAMILY>_<source>_<manager>[-version][-codeN][_susfs-vX.Y.Z]_rN.zip
 
 ## Pin refresh
 
-Review `config/known-good-pins.json` and manager SUSFS forks **every 2–4 weeks** or after upstream breaks CI.
+Review `config/susfs-refs.json` and manager SUSFS forks **every 2–4 weeks** or after upstream breaks CI.
 
 ## JOBS / ThinLTO overrides (self-hosted)
 

@@ -28,10 +28,11 @@ on:
         type: boolean
         default: false
       susfs_version:
-        description: SUSFS preset version
+        description: SUSFS version (latest branch commit, pinned preset, or custom)
         type: choice
-        default: v2.2.0
+        default: latest
         options:
+          - latest
           - v2.2.0
           - v2.1.0
           - custom

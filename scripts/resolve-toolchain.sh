@@ -4,18 +4,9 @@ set -euo pipefail
 # Resolve TOOLCHAIN=auto from kernel preset recommended_toolchain.
 # Prefer an explicit KERNEL_SOURCE over any stale release/kernel-source.env.
 
-if [[ -n "${KERNEL_SOURCE:-}" ]]; then
-  SOURCE_REF="${SOURCE_REF:-}"
-  bash scripts/resolve-kernel-source.sh >/dev/null
-elif [[ -f release/kernel-source.env ]]; then
-  # shellcheck disable=SC1091
-  source release/kernel-source.env
-else
-  KERNEL_SOURCE=melt
-  SOURCE_REF="${SOURCE_REF:-}"
+if [[ -n "${KERNEL_SOURCE:-}" ]] || [[ ! -f release/kernel-source.env ]]; then
   bash scripts/resolve-kernel-source.sh >/dev/null
 fi
-
 if [[ -f release/kernel-source.env ]]; then
   # shellcheck disable=SC1091
   source release/kernel-source.env
