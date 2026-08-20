@@ -27,7 +27,17 @@ on:
         description: "Source: Build ALL kernel sources"
         type: boolean
         default: false
-
+      kernel_source:
+        description: "Preset shortcut (auto = use source checkboxes above)"
+        type: choice
+        default: auto
+        options:
+          - auto
+          - melt
+          - lineageos
+          - evolution-x
+          - aosp-pablo
+          - pa-gr
       # ── Root Managers ──
       build_none:
         description: "Manager: Baseline (No Root)"
@@ -151,7 +161,7 @@ jobs:
           BUILD_SOURCE_PA_GR: ${{ inputs.build_source_pa_gr }}
           BUILD_NONE: ${{ inputs.build_none }}
           BUILD_KERNELSU: ${{ inputs.build_kernelsu }}
-          BUILD_KERNELSU_NEXT: ${{ inputs.build_kernelsu_next }}
+          KERNEL_SOURCE: ${{ inputs.kernel_source }}
           BUILD_SUKISU_ULTRA: ${{ inputs.build_sukisu_ultra }}
           BUILD_RESUKISU: ${{ inputs.build_resukisu }}
           ENABLE_SUSFS: ${{ inputs.enable_susfs }}

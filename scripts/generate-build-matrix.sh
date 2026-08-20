@@ -15,7 +15,6 @@ with open(managers_path, encoding="utf-8") as fh:
     managers = json.load(fh)
 with open(sources_path, encoding="utf-8") as fh:
     kernel_sources = json.load(fh)
-
 build_all_sources = os.environ.get("BUILD_SOURCE_ALL", "false") == "true"
 
 source_flags = [
@@ -26,14 +25,16 @@ source_flags = [
     ("pa-gr", os.environ.get("BUILD_SOURCE_PA_GR", "false")),
 ]
 
+ks_env = os.environ.get("KERNEL_SOURCE", "").strip()
+
 if build_all_sources:
     selected_sources = list(kernel_sources.keys())
 else:
     selected_sources = [s for s, w in source_flags if w == "true"]
-    if not selected_sources and os.environ.get("KERNEL_SOURCE"):
-        ks = os.environ["KERNEL_SOURCE"]
-        if ks in kernel_sources:
-            selected_sources = [ks]
+    if not selected_sources and ks_env and ks_env != "auto" and ks_env in kernel_sources:
+        selected_sources = [ks_env]
+    elif ks_env and ks_env != "auto" and ks_env in kernel_sources and ks_env not in selected_sources:
+        selected_sources.append(ks_env)
 
 if not selected_sources:
     print("::error::No kernel sources selected. Enable at least one build_source_* checkbox.", file=sys.stderr)
