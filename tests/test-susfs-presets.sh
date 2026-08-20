@@ -4,7 +4,8 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
 
-python3 - <<'PY'
+PYTHON="${PYTHON:-python3}"
+"${PYTHON}" - <<'PY'
 import json
 import re
 

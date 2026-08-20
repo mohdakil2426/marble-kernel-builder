@@ -36,7 +36,8 @@ json_file="${release_dir}/build-info.json"
   exit 1
 }
 
-python3 - "${json_file}" <<'PY'
+PYTHON="${PYTHON:-python3}"
+"${PYTHON}" - "${json_file}" <<'PY'
 import json
 import sys
 

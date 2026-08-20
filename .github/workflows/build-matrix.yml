@@ -3,35 +3,74 @@ name: Build Marble Kernel
 on:
   workflow_dispatch:
     inputs:
+      build_source_melt:
+        description: "Source: Melt (Stock HyperOS)"
+        type: boolean
+        default: true
+      build_source_lineageos:
+        description: "Source: LineageOS (LOS ROMs)"
+        type: boolean
+        default: false
+      build_source_evolution_x:
+        description: "Source: Evolution-X (LOS ROMs)"
+        type: boolean
+        default: false
+      build_source_aosp_pablo:
+        description: "Source: aosp-pablo (LOS ROMs)"
+        type: boolean
+        default: false
+      build_source_pa_gr:
+        description: "Source: pa-gr (LOS ROMs)"
+        type: boolean
+        default: false
+      build_source_all:
+        description: "Source: Build ALL kernel sources"
+        type: boolean
+        default: false
+      kernel_source:
+        description: "Preset shortcut (auto = use source checkboxes above)"
+        type: choice
+        default: auto
+        options:
+          - auto
+          - melt
+          - lineageos
+          - evolution-x
+          - aosp-pablo
+          - pa-gr
+      # ── Root Managers ──
       build_none:
-        description: "Build: none (baseline no-root)"
+        description: "Manager: Baseline (No Root)"
         type: boolean
         default: false
       build_kernelsu:
-        description: "Build: KernelSU (no SUSFS)"
+        description: "Manager: KernelSU (No SUSFS)"
         type: boolean
         default: false
       build_kernelsu_next:
-        description: "Build: KernelSU-Next"
+        description: "Manager: KernelSU-Next"
         type: boolean
         default: false
       build_sukisu_ultra:
-        description: "Build: SukiSU Ultra"
+        description: "Manager: SukiSU Ultra"
         type: boolean
         default: false
       build_resukisu:
-        description: "Build: ReSukiSU"
+        description: "Manager: ReSukiSU"
         type: boolean
         default: false
+
+      # ── Configuration & Features ──
       enable_susfs:
         description: "Enable SUSFS (applies to KSUNext, SukiSU Ultra, ReSukiSU)"
         type: boolean
         default: false
       susfs_version:
-        description: SUSFS preset version
+        description: SUSFS version (latest branch commit, pinned preset, or custom)
         type: choice
-        default: v2.2.0
+        default: latest
         options:
+          - latest
           - v2.2.0
           - v2.1.0
           - custom
@@ -39,16 +78,6 @@ on:
         description: "SUSFS branch/tag/commit (only for custom version)"
         required: false
         default: ""
-      kernel_source:
-        description: "Kernel source (named by project/author)"
-        type: choice
-        default: melt
-        options:
-          - melt
-          - lineageos
-          - evolution-x
-          - aosp-pablo
-          - pa-gr
       source_ref:
         description: "Override branch/tag/commit (empty = preset default)"
         required: false
@@ -89,7 +118,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.kernel_source }}-${{ inputs.toolchain }}-${{ inputs.lto }}-${{ inputs.enable_susfs }}-${{ inputs.build_scope }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.toolchain }}-${{ inputs.lto }}-${{ inputs.enable_susfs }}-${{ inputs.build_scope }}
   cancel-in-progress: false
 
 jobs:
@@ -124,8 +153,15 @@ jobs:
       - name: Generate build matrix
         id: gen
         env:
+          BUILD_SOURCE_ALL: ${{ inputs.build_source_all }}
+          BUILD_SOURCE_MELT: ${{ inputs.build_source_melt }}
+          BUILD_SOURCE_LINEAGEOS: ${{ inputs.build_source_lineageos }}
+          BUILD_SOURCE_EVOLUTION_X: ${{ inputs.build_source_evolution_x }}
+          BUILD_SOURCE_AOSP_PABLO: ${{ inputs.build_source_aosp_pablo }}
+          BUILD_SOURCE_PA_GR: ${{ inputs.build_source_pa_gr }}
           BUILD_NONE: ${{ inputs.build_none }}
           BUILD_KERNELSU: ${{ inputs.build_kernelsu }}
+          KERNEL_SOURCE: ${{ inputs.kernel_source }}
           BUILD_KERNELSU_NEXT: ${{ inputs.build_kernelsu_next }}
           BUILD_SUKISU_ULTRA: ${{ inputs.build_sukisu_ultra }}
           BUILD_RESUKISU: ${{ inputs.build_resukisu }}
@@ -133,7 +169,6 @@ jobs:
         run: |
           matrix="$(bash scripts/generate-build-matrix.sh)"
           echo "Generated matrix: ${matrix}"
-
   build:
     name: ${{ matrix.label }}
     needs: setup
@@ -146,7 +181,7 @@ jobs:
       attestations: write
     uses: ./.github/workflows/build-core.yml
     with:
-      kernel_source: ${{ inputs.kernel_source }}
+      kernel_source: ${{ matrix.kernel_source }}
       source_ref: ${{ inputs.source_ref }}
       manager: ${{ matrix.manager }}
       manager_ref: ""

@@ -7,7 +7,7 @@ BUILD_SCOPE="${BUILD_SCOPE:-image-only}"
 SOURCE_REPO="${SOURCE_REPO:-}"
 SOURCE_REF="${SOURCE_REF:-}"
 KERNEL_SOURCE="${KERNEL_SOURCE:-}"
-SUSFS_VERSION="${SUSFS_VERSION:-v2.2.0}"
+SUSFS_VERSION="${SUSFS_VERSION:-latest}"
 SUSFS_KERNEL_BRANCH="${SUSFS_KERNEL_BRANCH:-gki-android12-5.10}"
 SUSFS_REF="${SUSFS_REF:-}"
 SUSFS_EXPECTED_VERSION="${SUSFS_EXPECTED_VERSION:-}"
@@ -23,20 +23,9 @@ if [[ -n "${KERNEL_SOURCE}" ]]; then
     echo "::error::config/kernel-sources.json is missing"
     exit 1
   fi
-  if ! KERNEL_SOURCE="${KERNEL_SOURCE}" python3 - config/kernel-sources.json <<'PY'
-import json
-import os
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as fh:
-    presets = json.load(fh)
-kernel_source = os.environ["KERNEL_SOURCE"]
-if kernel_source not in presets:
-    print(f"::error::Unsupported kernel_source: {kernel_source}", file=sys.stderr)
-    print("Allowed: " + ", ".join(sorted(presets)), file=sys.stderr)
-    sys.exit(1)
-PY
-  then
+  if ! jq -e --arg k "${KERNEL_SOURCE}" '.[$k]' config/kernel-sources.json >/dev/null; then
+    echo "::error::Unsupported kernel_source: ${KERNEL_SOURCE}" >&2
+    echo "Allowed: $(jq -r 'keys | sort | join(", ")' config/kernel-sources.json)" >&2
     exit 1
   fi
 fi
@@ -82,8 +71,8 @@ if [[ "${ENABLE_SUSFS}" == "true" && "${MANAGER}" == "none" ]]; then
 fi
 
 case "${SUSFS_VERSION}" in
-  v2.2.0|v2.1.0|custom) ;;
-  *) echo "::error::SUSFS_VERSION must be v2.2.0, v2.1.0, or custom, got ${SUSFS_VERSION}"; exit 1 ;;
+  latest|v2.2.0|v2.1.0|custom) ;;
+  *) echo "::error::SUSFS_VERSION must be latest, v2.2.0, v2.1.0, or custom, got ${SUSFS_VERSION}"; exit 1 ;;
 esac
 
 if [[ "${ENABLE_SUSFS}" == "true" ]]; then

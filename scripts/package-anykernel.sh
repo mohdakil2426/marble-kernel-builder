@@ -1,26 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Preserve caller/preset labels before marble.env / release env files are applied.
-_caller_rom_label="${SUPPORTED_ROM_LABEL+x}"
-_caller_rom_family="${ROM_FAMILY+x}"
-_caller_kernel_source="${KERNEL_SOURCE+x}"
-_caller_package_family="${PACKAGE_FAMILY+x}"
-_preset_rom_label="${SUPPORTED_ROM_LABEL:-}"
-_preset_rom_family="${ROM_FAMILY:-}"
-_preset_kernel_source="${KERNEL_SOURCE:-}"
-_preset_package_family="${PACKAGE_FAMILY:-}"
+_caller_source="${KERNEL_SOURCE:-}"
+_caller_rom="${ROM_FAMILY:-}"
+_caller_pkg="${PACKAGE_FAMILY:-}"
 
 source config/marble.env
 
-KERNEL_DIR="${KERNEL_DIR:-kernel-source}"
-MANAGER="${MANAGER:-none}"
-ENABLE_SUSFS="${ENABLE_SUSFS:-false}"
-BUILD_SCOPE="${BUILD_SCOPE:-image-only}"
-run_number="${GITHUB_RUN_NUMBER:-local}"
-LTO="${LTO:-thin}"
-
-release_dir="${KERNEL_DIR}/${RELEASE_DIR}"
 if [[ -f release/resolved-refs.env ]]; then
   # shellcheck disable=SC1091
   source release/resolved-refs.env
@@ -30,58 +16,24 @@ if [[ -f release/kernel-source.env ]]; then
   source release/kernel-source.env
 fi
 
-# Explicit caller env always wins (tests + CI step env).
-if [[ -n "${_caller_rom_label}" ]]; then
-  SUPPORTED_ROM_LABEL="${_preset_rom_label}"
-else
-  SUPPORTED_ROM_LABEL="${SUPPORTED_ROM_LABEL:-HyperOS}"
-fi
-if [[ -n "${_caller_rom_family}" ]]; then
-  ROM_FAMILY="${_preset_rom_family}"
-fi
-if [[ -n "${_caller_kernel_source}" ]]; then
-  KERNEL_SOURCE="${_preset_kernel_source}"
-else
-  KERNEL_SOURCE="${KERNEL_SOURCE:-melt}"
-fi
-if [[ -n "${_caller_package_family}" ]]; then
-  PACKAGE_FAMILY="${_preset_package_family}"
-elif [[ -n "${_caller_kernel_source}" || -n "${_caller_rom_family}" ]]; then
-  # Caller overrode source/family — do not keep a stale PACKAGE_FAMILY from
-  # release/kernel-source.env (e.g. prior LOS resolve left PACKAGE_FAMILY=LOS).
-  PACKAGE_FAMILY=""
-fi
-unset _caller_rom_label _caller_rom_family _caller_kernel_source _caller_package_family
-unset _preset_rom_label _preset_rom_family _preset_kernel_source _preset_package_family
-
-derive_package_family() {
-  local rom_family="${ROM_FAMILY:-}"
-  local kernel_source="${KERNEL_SOURCE:-melt}"
-  local package_family="${PACKAGE_FAMILY:-}"
-
-  if [[ -n "${package_family}" ]]; then
-    case "${package_family}" in
-      LOS|los) echo "LOS"; return ;;
-      MELT|melt) echo "MELT"; return ;;
-    esac
-  fi
-
-  case "${rom_family}" in
-    los|LOS) echo "LOS"; return ;;
-    hyperos|HyperOS|melt|MELT) echo "MELT"; return ;;
-  esac
-
-  case "${kernel_source}" in
-    lineageos|evolution-x|aosp-pablo|pa-gr) echo "LOS" ;;
-    *) echo "MELT" ;;
-  esac
-}
-
+KERNEL_SOURCE="${_caller_source:-${KERNEL_SOURCE:-melt}}"
+ROM_FAMILY="${_caller_rom:-${ROM_FAMILY:-}}"
+KERNEL_DIR="${KERNEL_DIR:-kernel-source}"
+release_dir="${KERNEL_DIR}/${RELEASE_DIR}"
+MANAGER="${MANAGER:-none}"
+ENABLE_SUSFS="${ENABLE_SUSFS:-false}"
+BUILD_SCOPE="${BUILD_SCOPE:-image-only}"
+run_number="${GITHUB_RUN_NUMBER:-local}"
+LTO="${LTO:-thin}"
+SUPPORTED_ROM_LABEL="${SUPPORTED_ROM_LABEL:-HyperOS}"
 sanitize_token() {
   printf '%s' "$1" | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//'
 }
 
-PACKAGE_FAMILY="$(derive_package_family)"
+case "${PACKAGE_FAMILY:-${ROM_FAMILY:-${KERNEL_SOURCE}}}" in
+  LOS|los|lineageos|evolution-x|aosp-pablo|pa-gr) PACKAGE_FAMILY="LOS" ;;
+  *) PACKAGE_FAMILY="MELT" ;;
+esac
 source_token="$(sanitize_token "${KERNEL_SOURCE:-melt}")"
 [[ -n "${source_token}" ]] || source_token="melt"
 

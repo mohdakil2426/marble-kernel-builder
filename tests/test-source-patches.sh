@@ -5,8 +5,8 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
 
-# pa-gr config must declare gated source_patches
-python3 - <<'PY'
+PYTHON="${PYTHON:-python3}"
+"${PYTHON}" - <<'PY'
 import json
 from pathlib import Path
 

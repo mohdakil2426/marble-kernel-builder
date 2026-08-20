@@ -120,15 +120,7 @@ summary_strip_cache_section() {
     return 1
   fi
   local stripped
-  stripped="$(
-    awk -v start="${SUMMARY_CACHE_START}" -v end="${SUMMARY_CACHE_END}" '
-      $0 == start { skip=1; next }
-      $0 == end { skip=0; next }
-      !skip { print }
-    ' "${input}"
-  )"
-  # Drop extra blank lines left where the section was removed (collapse 3+ → 2).
-  stripped="$(printf '%s\n' "${stripped}" | awk 'BEGIN{b=0} /^$/{b++; if(b<=2) print; next} {b=0; print}')"
+  stripped="$(sed -e "/${SUMMARY_CACHE_START}/,/${SUMMARY_CACHE_END}/d" "${input}")"
   if [[ -n "${output}" ]]; then
     printf '%s\n' "${stripped}" > "${output}"
   else

@@ -36,11 +36,7 @@ if [[ "${#artifact_dirs[@]}" -eq 0 ]]; then
   exit 1
 fi
 
-get_info() {
-  local file="$1"
-  local key="$2"
-  summary_get_info "${file}" "${key}"
-}
+get_info() { summary_get_info "$1" "$2"; }
 
 manager_version_label() {
   local build_info="$1"
@@ -137,7 +133,16 @@ builder_repo="${GITHUB_REPOSITORY:-mohdakil2426/marble-kernel-builder}"
 banner_ref="${GITHUB_SHA:-main}"
 banner_url="https://raw.githubusercontent.com/${builder_repo}/${banner_ref}/docs/assets/marble-banner.svg"
 
-manager_badge_url="https://img.shields.io/badge/Matrix-${manager_count}_managers_passed-4CAF50?logo=githubactions&logoColor=white"
+declare -A unique_sources=()
+for artifact_dir in "${artifact_dirs[@]}"; do
+  b_info="${artifact_dir}/build-info.txt"
+  [[ -f "${b_info}" ]] || continue
+  ks="$(get_info "${b_info}" kernel_source)"
+  unique_sources["${ks:-melt}"]=1
+done
+source_count="${#unique_sources[@]}"
+
+manager_badge_url="https://img.shields.io/badge/Matrix-${manager_count}_builds_passed-4CAF50?logo=githubactions&logoColor=white"
 if [[ "${enable_susfs_first}" == "true" && -n "${susfs_display}" ]]; then
   susfs_badge_url="https://img.shields.io/badge/SUSFS-$(badge_encode "${susfs_display}")-FF6D00?logo=gitlab&logoColor=white"
 else
@@ -181,10 +186,19 @@ lto_badge_url="https://img.shields.io/badge/LTO-$(badge_encode "${lto_mode}")-9C
   echo "## ✅ Result"
   echo
   echo "> [!NOTE]"
-  echo "> **${manager_count} of ${manager_count} manager builds passed.** Every ZIP below was compiled from the **same** kernel commit, the **same** toolchain and the **same** SUSFS commit — they differ *only* by root manager."
+  if [[ "${source_count}" -gt 1 ]]; then
+    echo "> **${manager_count} of ${manager_count} matrix builds passed across ${source_count} kernel sources.**"
+  else
+    echo "> **${manager_count} of ${manager_count} manager builds passed.** Every ZIP below was compiled from the **same** kernel commit, the **same** toolchain and the **same** SUSFS commit — they differ *only* by root manager."
+  fi
   echo
-  echo "| Manager | Version | Code | SUSFS | Build | Size |"
-  echo "|:---|:---|:---:|:---:|:---:|:---:|"
+  if [[ "${source_count}" -gt 1 ]]; then
+    echo "| Source | Manager | Version | Code | SUSFS | Build | Size |"
+    echo "|:---|:---|:---|:---:|:---:|:---:|:---:|"
+  else
+    echo "| Manager | Version | Code | SUSFS | Build | Size |"
+    echo "|:---|:---|:---:|:---:|:---:|:---:|"
+  fi
   for artifact_dir in "${artifact_dirs[@]}"; do
     build_info="${artifact_dir}/build-info.txt"
     zip_env="${artifact_dir}/zip-name.env"
@@ -201,7 +215,13 @@ lto_badge_url="https://img.shields.io/badge/LTO-$(badge_encode "${lto_mode}")-9C
     else
       susfs_cell="—"
     fi
-    echo "| **${display}** | \`${version_cell}\` | \`${code_cell}\` | ${susfs_cell} | ✅ passed | $(zip_size_of "${artifact_dir}/${zip_name}") |"
+    if [[ "${source_count}" -gt 1 ]]; then
+      src_name="$(get_info "${build_info}" kernel_source_display)"
+      src_name="${src_name:-$(get_info "${build_info}" kernel_source)}"
+      echo "| **${src_name:-Melt}** | **${display}** | \`${version_cell}\` | \`${code_cell}\` | ${susfs_cell} | ✅ passed | $(zip_size_of "${artifact_dir}/${zip_name}") |"
+    else
+      echo "| **${display}** | \`${version_cell}\` | \`${code_cell}\` | ${susfs_cell} | ✅ passed | $(zip_size_of "${artifact_dir}/${zip_name}") |"
+    fi
   done
   echo
   echo "---"
@@ -213,8 +233,13 @@ lto_badge_url="https://img.shields.io/badge/LTO-$(badge_encode "${lto_mode}")-9C
   echo "> [!IMPORTANT]"
   echo "> **Pick exactly one.** These are alternative kernels, not components of a set. Flashing a second one simply replaces the first."
   echo
-  echo "| If you want | Flash this ZIP | Then install |"
-  echo "|:---|:---|:---|"
+  if [[ "${source_count}" -gt 1 ]]; then
+    echo "| Target ROM | Kernel Source | Manager | Flash this ZIP | Then install |"
+    echo "|:---|:---|:---|:---|:---|"
+  else
+    echo "| If you want | Flash this ZIP | Then install |"
+    echo "|:---|:---|:---|"
+  fi
   for artifact_dir in "${artifact_dirs[@]}"; do
     build_info="${artifact_dir}/build-info.txt"
     zip_env="${artifact_dir}/zip-name.env"
@@ -225,19 +250,29 @@ lto_badge_url="https://img.shields.io/badge/LTO-$(badge_encode "${lto_mode}")-9C
     display="$(manager_display "${manager_name}")"
     version_cell="$(manager_version_only "${build_info}")"
     app_url="$(manager_app_url "${manager_name}")"
-    if [[ "${manager_name}" == "none" ]]; then
-      echo "| **No root** — clean baseline kernel | \`${zip_name}\` | nothing — this build has no manager |"
-    elif [[ -n "${app_url}" ]]; then
-      echo "| **${display}** \`${version_cell}\` | \`${zip_name}\` | [${display} app](${app_url}) |"
+    src_name="$(get_info "${build_info}" kernel_source_display)"
+    src_name="${src_name:-$(get_info "${build_info}" kernel_source)}"
+    r_support="$(get_info "${build_info}" rom_support)"
+    
+    if [[ "${source_count}" -gt 1 ]]; then
+      if [[ "${manager_name}" == "none" ]]; then
+        echo "| ${r_support:-Universal} | **${src_name:-Melt}** | **No root** | \`${zip_name}\` | nothing — this build has no manager |"
+      elif [[ -n "${app_url}" ]]; then
+        echo "| ${r_support:-Universal} | **${src_name:-Melt}** | **${display}** \`${version_cell}\` | \`${zip_name}\` | [${display} app](${app_url}) |"
+      else
+        echo "| ${r_support:-Universal} | **${src_name:-Melt}** | **${display}** \`${version_cell}\` | \`${zip_name}\` | the ${display} manager app |"
+      fi
     else
-      echo "| **${display}** \`${version_cell}\` | \`${zip_name}\` | the ${display} manager app |"
+      if [[ "${manager_name}" == "none" ]]; then
+        echo "| **No root** — clean baseline kernel | \`${zip_name}\` | nothing — this build has no manager |"
+      elif [[ -n "${app_url}" ]]; then
+        echo "| **${display}** \`${version_cell}\` | \`${zip_name}\` | [${display} app](${app_url}) |"
+      else
+        echo "| **${display}** \`${version_cell}\` | \`${zip_name}\` | the ${display} manager app |"
+      fi
     fi
   done
   echo
-  if [[ "${enable_susfs_first}" == "true" ]]; then
-    echo "Every rooted ZIP here also needs the [SUSFS userspace module](https://github.com/sidex15/susfs4ksu-module/releases) matching \`${susfs_display}\`. The kernel patch alone does not give you working hiding."
-    echo
-  fi
   echo "---"
   echo
 

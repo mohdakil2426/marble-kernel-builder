@@ -66,7 +66,9 @@ if [[ "${MANAGER}" != "none" ]]; then
 fi
 
 if [[ "${ENABLE_SUSFS}" == "true" ]]; then
-  if [[ "${SUSFS_VERSION}" == "custom" ]]; then
+  if [[ "${SUSFS_VERSION}" == "latest" ]]; then
+    susfs_effective_ref="${SUSFS_KERNEL_BRANCH}"
+  elif [[ "${SUSFS_VERSION}" == "custom" ]]; then
     susfs_effective_ref="${SUSFS_REF}"
   else
     susfs_effective_ref="$(jq -r --arg branch "${SUSFS_KERNEL_BRANCH}" --arg version "${SUSFS_VERSION}" '.[$branch][$version].ref // empty' config/susfs-refs.json)"
@@ -75,7 +77,6 @@ if [[ "${ENABLE_SUSFS}" == "true" ]]; then
       exit 1
     fi
   fi
-
   # Shallow resolve of SUSFS version from simonpunk/susfs4ksu. Cleanup must never
   # fail this step: free runners occasionally race on partial-clone temp trees
   # (observed: `rm: cannot remove '...': Directory not empty` under set -e).
@@ -105,7 +106,7 @@ if [[ "${ENABLE_SUSFS}" == "true" ]]; then
   susfs_url="https://gitlab.com/simonpunk/susfs4ksu/-/commit/${susfs_commit}"
 
   expected="${SUSFS_EXPECTED_VERSION}"
-  if [[ -z "${expected}" && "${SUSFS_VERSION}" != "custom" ]]; then
+  if [[ -z "${expected}" && "${SUSFS_VERSION}" != "custom" && "${SUSFS_VERSION}" != "latest" ]]; then
     expected="${SUSFS_VERSION}"
   fi
   if [[ -n "${expected}" && "${susfs_reported_version}" != "${expected}" ]]; then
