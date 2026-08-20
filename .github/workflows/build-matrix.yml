@@ -162,12 +162,13 @@ jobs:
           BUILD_NONE: ${{ inputs.build_none }}
           BUILD_KERNELSU: ${{ inputs.build_kernelsu }}
           KERNEL_SOURCE: ${{ inputs.kernel_source }}
+          BUILD_KERNELSU_NEXT: ${{ inputs.build_kernelsu_next }}
           BUILD_SUKISU_ULTRA: ${{ inputs.build_sukisu_ultra }}
           BUILD_RESUKISU: ${{ inputs.build_resukisu }}
           ENABLE_SUSFS: ${{ inputs.enable_susfs }}
+        run: |
           matrix="$(bash scripts/generate-build-matrix.sh)"
           echo "Generated matrix: ${matrix}"
-
   build:
     name: ${{ matrix.label }}
     needs: setup
