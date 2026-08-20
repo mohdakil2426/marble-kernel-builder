@@ -24,7 +24,7 @@ Last updated: **2026-07-13** (branch `feature/pa-gr-kernel-source` — pa-gr SM8
 
 The workflow resolves branch, tag, and commit inputs to exact commits at run time and records them in `release/build-info.txt`. For SUSFS, the user chooses `susfs_version=latest` (default, tracks upstream branch HEAD), `susfs_version=v2.2.0` (pinned stable), `susfs_version=v2.1.0` (legacy pin), or `susfs_version=custom`. Custom mode uses `susfs_ref` and verifies `susfs_expected_version` when provided.
 
-Device targets remain Poco F5 (`marblein`) and Redmi Note 12 Turbo (`marble`). ROM support depends on the selected kernel preset: `melt` is stock HyperOS; `lineageos`, `evolution-x`, `aosp-pablo`, and `pa-gr` are for LOS-based custom ROMs only.
+Device targets remain Poco F5 (`marblein`) and Redmi Note 12 Turbo (`marble`). ROM support depends on the selected kernel preset: `melt` is stock HyperOS; `lineageos`, `evolution-x`, `aosp-pablo`, and `pa-gr` are for LOS-based custom ROMs only. In `build-matrix.yml`, users can check any combination of kernel sources (or `build_source_all`) and root managers to build a full multi-source multi-manager matrix in a single workflow run.
 
 **ZIP naming (2026-07-13+):**
 

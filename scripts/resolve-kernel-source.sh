@@ -10,8 +10,9 @@ if [[ ! -f config/kernel-sources.json ]]; then
   exit 1
 fi
 
+PYTHON="${PYTHON:-python3}"
 eval "$(
-  KERNEL_SOURCE="${KERNEL_SOURCE}" SOURCE_REF="${SOURCE_REF}" python3 - config/kernel-sources.json <<'PY'
+  KERNEL_SOURCE="${KERNEL_SOURCE}" SOURCE_REF="${SOURCE_REF}" "${PYTHON}" - config/kernel-sources.json <<'PY'
 import json
 import os
 import shlex

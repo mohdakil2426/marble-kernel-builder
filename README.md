@@ -207,7 +207,7 @@ The kernel side is only half of SUSFS — after flashing, also install the match
 
 ## ⚙️ How a build runs
 
-Two workflows do the work: **`build-matrix.yml`** is the only entrypoint you use, and it calls the reusable **`build-core.yml`** once per selected manager, in parallel.
+Two workflows do the work: **`build-matrix.yml`** is the entrypoint you use, generating a 2D matrix across your selected kernel sources and root managers, calling reusable **`build-core.yml`** for each combination in parallel.
 
 ```mermaid
 flowchart TD
@@ -256,8 +256,13 @@ flowchart LR
 
 | Input | Default | Description |
 |---|---|---|
-| `kernel_source` | `melt` | `melt` · `lineageos` · `evolution-x` · `aosp-pablo` · `pa-gr` |
-| `source_ref` | *(empty)* | Override the preset's branch/tag/commit |
+| `build_source_melt` | `true` | Source: Melt (Stock HyperOS) |
+| `build_source_lineageos` | `false` | Source: LineageOS (LOS ROMs) |
+| `build_source_evolution_x` | `false` | Source: Evolution-X (LOS ROMs) |
+| `build_source_aosp_pablo` | `false` | Source: aosp-pablo (LOS ROMs) |
+| `build_source_pa_gr` | `false` | Source: pa-gr (LOS ROMs) |
+| `build_source_all` | `false` | Build ALL 5 kernel sources at once |
+| `source_ref` | *(empty)* | Override branch/tag/commit (empty = preset defaults) |
 | `build_none` | `false` | Baseline no-root kernel |
 | `build_kernelsu` | `false` | KernelSU (no SUSFS) |
 | `build_kernelsu_next` | `false` | KernelSU-Next |

@@ -148,17 +148,16 @@ grep -Fq 'concurrency:' "${wrapper}" || {
   exit 1
 }
 
-grep -Fq 'kernel_source:' "${matrix}" || {
-  echo "FAIL: matrix workflow does not expose the kernel_source dropdown" >&2
-  exit 1
-}
-
-for preset in melt lineageos evolution-x aosp-pablo pa-gr; do
-  grep -Fq -- "- ${preset}" "${matrix}" || {
-    echo "FAIL: matrix workflow missing kernel_source option: ${preset}" >&2
+for preset in melt lineageos evolution_x aosp_pablo pa_gr; do
+  grep -Fq "build_source_${preset}:" "${matrix}" || {
+    echo "FAIL: matrix workflow missing kernel source checkbox: build_source_${preset}" >&2
     exit 1
   }
 done
+grep -Fq 'build_source_all:' "${matrix}" || {
+  echo "FAIL: matrix workflow missing build_source_all checkbox" >&2
+  exit 1
+}
 
 grep -Fq 'apply-kernel-source-patches.sh' "${core}" || {
   echo "FAIL: build-core does not apply optional kernel source-local patches" >&2
@@ -175,8 +174,8 @@ grep -Fq 'apply-kernel-source-patches.sh' "${core}" || {
   exit 1
 }
 
-grep -Fq 'kernel_source: ${{ inputs.kernel_source }}' "${matrix}" || {
-  echo "FAIL: matrix workflow does not pass kernel_source to build-core" >&2
+grep -Fq 'kernel_source: ${{ matrix.kernel_source }}' "${matrix}" || {
+  echo "FAIL: matrix workflow does not pass matrix.kernel_source to build-core" >&2
   exit 1
 }
 

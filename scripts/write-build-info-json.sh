@@ -14,7 +14,8 @@ if [[ ! -f "${build_info}" || ! -f "${zip_env}" ]]; then
   exit 1
 fi
 
-python3 - "${build_info}" "${zip_env}" "${json_file}" <<'PY'
+PYTHON="${PYTHON:-python3}"
+"${PYTHON}" - "${build_info}" "${zip_env}" "${json_file}" <<'PY'
 import json
 import sys
 from pathlib import Path

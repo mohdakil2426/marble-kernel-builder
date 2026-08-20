@@ -276,12 +276,10 @@ Parallel matrix builds of different managers share the group key only when those
 
 | Input | Type | Default | Notes |
 |-------|------|---------|-------|
-| `build_none` … `build_resukisu` | boolean | false | At least one required |
-| `enable_susfs` | boolean | false | Applies to KSUNext / SukiSU / ReSukiSU only |
-| `susfs_version` | choice | `latest` | `latest` · `v2.2.0` · `v2.1.0` · `custom` |
-| `susfs_ref` | string | empty | Only for custom SUSFS |
-| `kernel_source` | choice | `melt` | `melt` · `lineageos` · `evolution-x` · `aosp-pablo` · `pa-gr` |
+| `build_source_melt` … `build_source_pa_gr` | boolean | `melt=true` | Select one or more kernel sources |
+| `build_source_all` | boolean | false | Build all 5 kernel sources at once |
 | `source_ref` | string | empty | Override preset branch/tag/commit |
+| `build_none` … `build_resukisu` | boolean | false | Select one or more root managers |
 | `build_scope` | choice | `image-only` | `image-only` · `full` |
 | `toolchain` | choice | `android-r416183b` | Or `llvm-22.1.8` (required for LOS armv9) |
 | `lto` | choice | `thin` | `none` · `thin` · `full` |

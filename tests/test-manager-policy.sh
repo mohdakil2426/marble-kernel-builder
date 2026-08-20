@@ -40,8 +40,8 @@ fi
 if grep -q 'custom_manager_' .github/workflows/build-matrix.yml; then
   fail "custom manager workflow inputs remain selectable"
 fi
-
-python3 - <<'PY'
+PYTHON="${PYTHON:-python3}"
+"${PYTHON}" - <<'PY'
 import json
 
 with open("config/managers.json", encoding="utf-8") as handle:
@@ -87,8 +87,7 @@ if SOURCE_REPO=owner/repo SOURCE_REF=main MANAGER=kernelsu-next ENABLE_SUSFS=tru
    SUSFS_KERNEL_BRANCH=gki-android14-6.1 bash scripts/validate-inputs.sh >/dev/null 2>&1; then
   fail "validation accepted a non-Marble SUSFS patch family"
 fi
-
-python3 - <<'PY'
+"${PYTHON}" - <<'PY'
 import json
 
 with open("config/managers.json", encoding="utf-8") as handle:
